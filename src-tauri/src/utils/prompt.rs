@@ -187,7 +187,7 @@ pub fn sys_prompt_builder(
     let example_jp = ai_prompt_example_old.filter(|s| !s.is_empty());
     let framing = build_framing_prefix_cn(user_name, character_name);
 
-    if !options.output_sec_lang {
+    if true {
         // 中文模式
         let example = match example_cn {
             Some(s) => format!("{}\n{}", EXAMPLE_CUSTOM, s),

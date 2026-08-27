@@ -6,6 +6,7 @@ use sea_orm::DatabaseConnection;
 
 use crate::ai_service::game_system::memory_builder::MemoryBuilder;
 use crate::ai_service::game_system::persistent_memory_system::PersistentMemorySystem;
+use crate::ai_service::game_system::node_memory::{NodeMemory, new_memory, SharedMemory};
 use crate::ai_service::llm::LlmSlot;
 use crate::ai_service::tts::VoiceMaker;
 use crate::ai_service::tts::local::LocalTtsRuntime;
@@ -26,6 +27,8 @@ pub struct GameRoleManager {
     llm: LlmSlot,
     /// 每个角色的 MemoryBank 后台压缩引擎（惰性构造）。
     memory_bank_systems: HashMap<i32, PersistentMemorySystem>,
+    /// 记忆：按角色分文件存储，键为 display_name
+    tree_mems: HashMap<String, SharedMemory>,
     /// TTS 引擎配置（适配器 URL、音频格式等）。
     tts_config: TtsConfig,
     /// 本地 TTS 共享运行时（进程内引擎 + 路径 + 全局开关）。
@@ -56,6 +59,7 @@ impl GameRoleManager {
             data_dir,
             llm,
             memory_bank_systems: HashMap::new(),
+            tree_mems: HashMap::new(),
             tts_config,
             local_tts,
             use_persistent_memory,
@@ -63,6 +67,17 @@ impl GameRoleManager {
             memory_recent_window,
             clothes_overrides: HashMap::new(),
         }
+    }
+
+    /// 获取或创建指定角色的记忆实例
+    async fn get_or_create_tree_mem(&mut self, display_name: &str) -> SharedMemory {
+        if let Some(mem) = self.tree_mems.get(display_name) {
+            return mem.clone();
+        }
+        let mem = new_memory(display_name).await;
+        tracing::warn!("(debug) 已创建角色 {} 的记忆", display_name);
+        self.tree_mems.insert(display_name.to_string(), mem.clone());
+        mem
     }
 
     /// 设置角色服装覆盖（来自 session store，优先于 settings.yml 的默认值）。
@@ -303,6 +318,7 @@ impl GameRoleManager {
             );
 
             // 阶段 2: MemoryBank 启用时 — 同步后台结果 + 触发压缩 + 获取记忆文本
+            let last_line = source_lines.last().unwrap();
             let (mb_exists, slice_start, system_addendum, short_term_prefix) = {
                 let sys = self.memory_bank_systems.get(&rid);
                 match sys {
@@ -313,8 +329,27 @@ impl GameRoleManager {
                         }
                         s.check_and_trigger_auto_update(source_lines);
                         let start = s.get_slice_start_index().await;
-                        let sys_text = s.get_system_memory_text().await;
+                        let mut sys_text = s.get_system_memory_text().await;
                         let short = s.get_short_term_user_text().await;
+
+                        // === TreeMemory 采样 + 注入 system_addendum ===
+                        let display_name = self
+                            .loaded_roles
+                            .get(&rid)
+                            .and_then(|role| role.display_name.clone());
+                        if let Some(display_name) = display_name {
+                            tracing::warn!("(debug) 正在采样角色 {} 的记忆树...", display_name);
+                            let path: Vec<String> = self.get_or_create_tree_mem(&display_name).await.write().await.recall(
+                                8, 
+                                last_line.content().to_string(), 
+                                Some(source_lines.iter().map(|line| line.content().to_string()).collect())
+                            ).await;
+                            tracing::warn!("(debug) 查到了：{}", path.join(" | "));
+                            if !path.is_empty() {
+                                sys_text = format!("{}\n====== 历史记忆 (History memories) ======\n{}", sys_text, path.join("\n---\n"));
+                            }
+                        }
+
                         (true, start, sys_text, short)
                     }
                     Some(_) => (true, 0, String::new(), String::new()),
@@ -354,6 +389,27 @@ impl GameRoleManager {
                 } else {
                     built
                 };
+            }
+
+            // 给角色节点记忆写入最新台词
+            if source_lines.len() > 1 { // 跳过 system prompt
+                let display_name = self
+                    .loaded_roles
+                    .get(&rid)
+                    .and_then(|role| role.display_name.clone());
+                if let Some(display_name) = display_name {
+                    let mut talking_name = "".to_string();
+                    if let Some(talking_rid) = last_line.sender_role_id() {
+                        if talking_rid != 0 {
+                            let talking_role = self.get_role(db, talking_rid).await?;
+                            talking_name = talking_role.display_name.clone().unwrap_or_else(|| "AI".to_string())+"：";
+                        } else {
+                            talking_name = "用户酱：".to_string(); // TODO: 从配置中获取
+                        }
+                    }
+                    // 写入低权重，因为对话原文比较不重要
+                    let _memory_id = self.get_or_create_tree_mem(&display_name).await.write().await.write(talking_name+last_line.content(), Some(0.1)).await;
+                }
             }
         }
 

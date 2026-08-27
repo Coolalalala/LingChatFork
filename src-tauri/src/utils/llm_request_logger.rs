@@ -46,7 +46,7 @@ pub fn log_request_body(provider_name: &str, body: &serde_json::Value) {
 
     let counter = REQUEST_COUNTER.fetch_add(1, Ordering::Relaxed);
     let timestamp = Local::now().format("%Y%m%d_%H%M%S");
-    let filename = log_dir.join(format!("{}_{}_{:05}.json", timestamp, provider_name, counter));
+    let filename = (log_dir).join(format!("{}_{}_{:05}.json", timestamp, provider_name.replace("/","-"), counter));
 
     let formatted = serde_json::to_string_pretty(body).unwrap_or_default();
     if let Err(e) = fs::write(&filename, &formatted) {
