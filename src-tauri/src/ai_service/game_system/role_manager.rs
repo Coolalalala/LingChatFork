@@ -6,7 +6,7 @@ use sea_orm::DatabaseConnection;
 
 use crate::ai_service::game_system::memory_builder::MemoryBuilder;
 use crate::ai_service::game_system::persistent_memory_system::PersistentMemorySystem;
-use crate::ai_service::game_system::node_memory::{NodeMemory, new_memory, SharedMemory};
+use crate::ai_service::game_system::node_memory::{recall_node_memory, write_node_memory};
 use crate::ai_service::llm::LlmSlot;
 use crate::ai_service::tts::VoiceMaker;
 use crate::ai_service::tts::local::LocalTtsRuntime;
@@ -27,8 +27,6 @@ pub struct GameRoleManager {
     llm: LlmSlot,
     /// 每个角色的 MemoryBank 后台压缩引擎（惰性构造）。
     memory_bank_systems: HashMap<i32, PersistentMemorySystem>,
-    /// 记忆：按角色分文件存储，键为 display_name
-    tree_mems: HashMap<String, SharedMemory>,
     /// TTS 引擎配置（适配器 URL、音频格式等）。
     tts_config: TtsConfig,
     /// 本地 TTS 共享运行时（进程内引擎 + 路径 + 全局开关）。
@@ -59,7 +57,6 @@ impl GameRoleManager {
             data_dir,
             llm,
             memory_bank_systems: HashMap::new(),
-            tree_mems: HashMap::new(),
             tts_config,
             local_tts,
             use_persistent_memory,
@@ -67,17 +64,6 @@ impl GameRoleManager {
             memory_recent_window,
             clothes_overrides: HashMap::new(),
         }
-    }
-
-    /// 获取或创建指定角色的记忆实例
-    async fn get_or_create_tree_mem(&mut self, display_name: &str) -> SharedMemory {
-        if let Some(mem) = self.tree_mems.get(display_name) {
-            return mem.clone();
-        }
-        let mem = new_memory(display_name).await;
-        tracing::warn!("(debug) 已创建角色 {} 的记忆", display_name);
-        self.tree_mems.insert(display_name.to_string(), mem.clone());
-        mem
     }
 
     /// 设置角色服装覆盖（来自 session store，优先于 settings.yml 的默认值）。
@@ -339,14 +325,15 @@ impl GameRoleManager {
                             .and_then(|role| role.display_name.clone());
                         if let Some(display_name) = display_name {
                             tracing::warn!("(debug) 正在采样角色 {} 的记忆树...", display_name);
-                            let path: Vec<String> = self.get_or_create_tree_mem(&display_name).await.write().await.recall(
+                            let path: Vec<String> = recall_node_memory(
+                                &display_name,
                                 8, 
                                 last_line.content().to_string(), 
-                                Some(source_lines.iter().map(|line| line.content().to_string()).collect())
+                                Some(source_lines.iter().skip(1).map(|line| line.content().to_string()).collect())
                             ).await;
                             tracing::warn!("(debug) 查到了：{}", path.join(" | "));
                             if !path.is_empty() {
-                                sys_text = format!("{}\n====== 历史记忆 (History memories) ======\n{}", sys_text, path.join("\n---\n"));
+                                sys_text = format!("{}\n====== 历史记忆 (Past memories) ======\n{}", sys_text, path.join("\n---\n"));
                             }
                         }
 
@@ -378,19 +365,6 @@ impl GameRoleManager {
             let built = MemoryBuilder::new(rid).build(&final_sliced);
 
             // 阶段 4: 写入角色记忆
-            if let Some(role) = self.loaded_roles.get_mut(&rid) {
-                let use_mb = mb_exists && mb_enabled && !system_addendum.is_empty();
-                role.memory = if use_mb {
-                    Self::merge_memory_bank_into_context(
-                        built,
-                        &system_addendum,
-                        &short_term_prefix,
-                    )
-                } else {
-                    built
-                };
-            }
-
             // 给角色节点记忆写入最新台词
             if source_lines.len() > 1 { // 跳过 system prompt
                 let display_name = self
@@ -408,8 +382,21 @@ impl GameRoleManager {
                         }
                     }
                     // 写入低权重，因为对话原文比较不重要
-                    let _memory_id = self.get_or_create_tree_mem(&display_name).await.write().await.write(talking_name+last_line.content(), Some(0.1)).await;
+                    let _memory_id = write_node_memory(&display_name, talking_name+last_line.content(), Some(0.1)).await;
                 }
+            }
+
+            if let Some(role) = self.loaded_roles.get_mut(&rid) {
+                let use_mb = mb_exists && mb_enabled && !system_addendum.is_empty();
+                role.memory = if use_mb {
+                    Self::merge_memory_bank_into_context(
+                        built,
+                        &system_addendum,
+                        &short_term_prefix,
+                    )
+                } else {
+                    built
+                };
             }
         }
 
