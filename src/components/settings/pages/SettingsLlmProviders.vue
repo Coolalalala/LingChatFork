@@ -86,6 +86,16 @@
               class="text-xs px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-300 border border-orange-500/30"
               >{{ $t('settings.llmProviders.role.vision') }}</span
             >
+            <span
+              v-if="store.dreamsProviderId === p.id"
+              class="text-xs px-2 py-0.5 rounded-full bg-pink-500/20 text-pink-300 border border-pink-500/30"
+              >{{ $t('settings.llmProviders.role.dreams') }}</span
+            >
+            <span
+              v-if="store.quickProviderId === p.id"
+              class="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-300 border border-green-500/30"
+              >{{ $t('settings.llmProviders.role.quick') }}</span
+            >
           </div>
 
           <!-- Actions -->
@@ -114,7 +124,7 @@
 
       <!-- Role assignment -->
       <div class="mt-4 pt-4 border-t border-white/10 shrink-0">
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="grid grid-cols-2 lg:grid-cols-3 gap-4">
           <div class="flex flex-col gap-1.5">
             <label class="text-xs font-medium text-white/60">{{ $t('settings.llmProviders.role.chatModel') }}</label>
             <div class="relative">
@@ -251,6 +261,56 @@
                     stroke-width="2"
                     d="M19 9l-7 7-7-7"
                   />
+                </svg>
+              </div>
+            </div>
+          </div>
+          <div class="flex flex-col gap-1.5"> 
+            <label class="text-xs font-medium text-white/60">{{ $t('settings.llmProviders.role.dreamsModel') }}</label>
+            <div class="relative"> 
+              <select
+                :value="store.dreamsProviderId ?? '__follow__'"
+                @change="onDreamsRoleChange(($event.target as HTMLSelectElement).value)"
+                class="w-full appearance-none pl-3 pr-8 py-2 rounded-lg bg-white/10 border border-white/20 text-white text-sm outline-none focus:border-brand transition-colors cursor-pointer"
+              >
+                <option value="__follow__" class="bg-gray-800 text-white">{{ $t('settings.llmProviders.role.followChat') }}</option>
+                <option
+                  v-for="p in store.providers"
+                  :key="p.id"
+                  :value="p.id"
+                  class="bg-gray-800 text-white"
+                >
+                  {{ p.label || p.model || $t('settings.llmProviders.list.unnamed') }}
+                </option>
+              </select>
+              <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5">
+                <svg class="w-4 h-4 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </div>
+          </div>
+          <div class="flex flex-col gap-1.5"> 
+            <label class="text-xs font-medium text-white/60">{{ $t('settings.llmProviders.role.quickModel') }}</label>
+            <div class="relative"> 
+              <select
+                :value="store.quickProviderId ?? '__follow__'"
+                @change="onQuickRoleChange(($event.target as HTMLSelectElement).value)"
+                class="w-full appearance-none pl-3 pr-8 py-2 rounded-lg bg-white/10 border border-white/20 text-white text-sm outline-none focus:border-brand transition-colors cursor-pointer"
+              >
+                <option value="__follow__" class="bg-gray-800 text-white">{{ $t('settings.llmProviders.role.followChat') }}</option>
+                <option
+                  v-for="p in store.providers"
+                  :key="p.id"
+                  :value="p.id"
+                  class="bg-gray-800 text-white"
+                >
+                  {{ p.label || p.model || $t('settings.llmProviders.list.unnamed') }}
+                </option>
+              </select>
+              <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5">
+                <svg class="w-4 h-4 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
                 </svg>
               </div>
             </div>
@@ -988,6 +1048,26 @@ async function onVisionRoleChange(value: string) {
     await store.assignRole('vision', value === '__follow__' ? null : value)
   } catch (e: any) {
     console.error('Failed to set vision role:', e)
+  }
+}
+
+async function onDreamsRoleChange(value: string) {
+  try {
+    await store.assignRole('dreams', value === '__follow__' ? null : value)
+    saveMessage.value = t('settings.llmProviders.msg.dreamsSwitched')
+    saveError.value = false
+  } catch (e: any) {
+    saveMessage.value = t('settings.llmProviders.msg.switchFailed', { error: e })
+  }
+}
+
+async function onQuickRoleChange(value: string) {
+  try {
+    await store.assignRole('quick', value === '__follow__' ? null : value)
+    saveMessage.value = t('settings.llmProviders.msg.quickSwitched')
+    saveError.value = false
+  } catch (e: any) {
+    saveMessage.value = t('settings.llmProviders.msg.switchFailed', { error: e })
   }
 }
 

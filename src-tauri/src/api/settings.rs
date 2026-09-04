@@ -10,10 +10,12 @@ use serde_json::Value as JsonValue;
 use tauri::AppHandle;
 use tauri_plugin_dialog::DialogExt;
 
+use crate::ai_service::game_system::vector_memory::set_dreams_client;
 use crate::ai_service::god_agent::config::resolve_god_agent_provider;
 use crate::ai_service::llm::provider_config::{
     build_llm_client_from_provider, load_providers, load_role_assignment, resolve_chat_provider,
-    resolve_translate_provider, save_providers, save_role_assignment, LlmProviderConfig,
+    resolve_translate_provider, resolve_dreams_provider, resolve_quick_provider,
+    save_providers, save_role_assignment, LlmProviderConfig,
     LlmProvidersResponse,
 };
 use crate::ai_service::llm::LlmModelInfo;
@@ -100,6 +102,8 @@ pub fn list_llm_providers(app: AppHandle) -> LlmProvidersResponse {
         translate_provider_id: assignment.translate_provider_id,
         god_agent_provider_id: assignment.god_agent_provider_id,
         vision_provider_id: assignment.vision_provider_id,
+        dreams_provider_id: assignment.dreams_provider_id,
+        quick_provider_id: assignment.quick_provider_id,
     }
 }
 
@@ -150,6 +154,14 @@ pub fn delete_llm_provider(app: AppHandle, id: String) -> Result<(), String> {
         assignment.vision_provider_id = None;
         changed = true;
     }
+    if assignment.dreams_provider_id.as_deref() == Some(&id) {
+        assignment.dreams_provider_id = None;
+        changed = true;
+    }
+    if assignment.quick_provider_id.as_deref() == Some(&id) {
+        assignment.quick_provider_id = None;
+        changed = true;
+    }
     if changed {
         save_role_assignment(&app, &assignment).map_err(|e| e.to_string())?;
     }
@@ -176,6 +188,8 @@ pub fn set_llm_role(
         "translate" => assignment.translate_provider_id = provider_id,
         "god_agent" => assignment.god_agent_provider_id = provider_id,
         "vision" => assignment.vision_provider_id = provider_id,
+        "dreams" => assignment.dreams_provider_id = provider_id,
+        "quick" => assignment.quick_provider_id = provider_id,
         other => return Err(format!("Invalid role: {other}")),
     }
     save_role_assignment(&app, &assignment).map_err(|e| e.to_string())?;
@@ -217,6 +231,17 @@ pub async fn switch_llm(app: AppHandle, state: tauri::State<'_, AppState>) -> Re
         *guard = new_god;
         tracing::info!("[switch_llm] 上帝Agent LLM 槽位已热切换");
     }
+
+    // 4. 重建发呆 LLM 槽位
+    let new_dreams = resolve_dreams_provider(&app)
+        .and_then(|p| build_llm_client_from_provider(&app, &p))
+        .map(Arc::new);
+    set_dreams_client(new_dreams).await;
+
+    // 5. 重建快速 LLM 槽位
+    let new_quick = resolve_quick_provider(&app)
+        .and_then(|p| build_llm_client_from_provider(&app, &p))
+        .map(Arc::new);
 
     Ok(())
 }

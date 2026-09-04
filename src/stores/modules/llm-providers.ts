@@ -15,6 +15,8 @@ export const useLlmProvidersStore = defineStore('llm-providers', {
     translateProviderId: null as string | null,
     godAgentProviderId: null as string | null,
     visionProviderId: null as string | null,
+    dreamsProviderId: null as string | null,
+    quickProviderId: null as string | null,
     loaded: false,
   }),
   getters: {
@@ -26,6 +28,10 @@ export const useLlmProvidersStore = defineStore('llm-providers', {
       state.providers.find((p) => p.id === state.godAgentProviderId) ?? null,
     visionProvider: (state) =>
       state.providers.find((p) => p.id === state.visionProviderId) ?? null,
+    dreamsProvider: (state) =>
+      state.providers.find((p) => p.id === state.dreamsProviderId) ?? null,
+    quickProvider: (state) =>
+      state.providers.find((p) => p.id === state.quickProviderId) ?? null,
     effectiveGodAgentProvider: (state) => {
       if (state.godAgentProviderId) {
         return (
@@ -66,6 +72,8 @@ export const useLlmProvidersStore = defineStore('llm-providers', {
         this.translateProviderId = data.translate_provider_id
         this.godAgentProviderId = data.god_agent_provider_id
         this.visionProviderId = data.vision_provider_id
+        this.dreamsProviderId = data.dreams_provider_id
+        this.quickProviderId = data.quick_provider_id
         this.loaded = true
       } catch (e) {
         console.error('Failed to load LLM providers:', e)
@@ -83,7 +91,7 @@ export const useLlmProvidersStore = defineStore('llm-providers', {
       // 删除后触发热切换（可能删除了正在使用的模型）
       await switchLlm()
     },
-    async assignRole(role: 'chat' | 'translate' | 'god_agent' | 'vision', providerId: string | null) {
+    async assignRole(role: 'chat' | 'translate' | 'god_agent' | 'vision' | 'dreams' | 'quick', providerId: string | null) {
       await setLlmRole(role, providerId)
       await this.load()
       // 角色分配变更后触发热切换

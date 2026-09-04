@@ -14,6 +14,8 @@ pub const LLM_CHAT_PROVIDER_ID: &str = "llm.chat_provider_id";
 pub const LLM_TRANSLATE_PROVIDER_ID: &str = "llm.translate_provider_id";
 pub const LLM_GOD_AGENT_PROVIDER_ID: &str = "llm.god_agent_provider_id";
 pub const LLM_VISION_PROVIDER_ID: &str = "llm.vision_provider_id";
+pub const LLM_DREAMS_PROVIDER_ID: &str = "llm.dreams_provider_id";
+pub const LLM_QUICK_PROVIDER_ID: &str = "llm.quick_provider_id";
 
 // ========== LLM 生成参数（对应 TEMPERATURE / TOP_P / ENABLE_THINKING） ==========
 pub const LLM_TEMPERATURE: &str = "llm.temperature";

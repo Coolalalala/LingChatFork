@@ -68,6 +68,10 @@ pub struct LlmRoleAssignment {
     pub god_agent_provider_id: Option<String>,
     #[serde(default)]
     pub vision_provider_id: Option<String>,
+    #[serde(default)]
+    pub dreams_provider_id: Option<String>,
+    #[serde(default)]
+    pub quick_provider_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,6 +81,8 @@ pub struct LlmProvidersResponse {
     pub translate_provider_id: Option<String>,
     pub god_agent_provider_id: Option<String>,
     pub vision_provider_id: Option<String>,
+    pub dreams_provider_id: Option<String>,
+    pub quick_provider_id: Option<String>,
 }
 
 // ============================================================
@@ -118,6 +124,8 @@ pub fn load_role_assignment(app: &AppHandle) -> LlmRoleAssignment {
         translate_provider_id: get_string_opt(&store, keys::LLM_TRANSLATE_PROVIDER_ID),
         god_agent_provider_id: get_string_opt(&store, keys::LLM_GOD_AGENT_PROVIDER_ID),
         vision_provider_id: get_string_opt(&store, keys::LLM_VISION_PROVIDER_ID),
+        dreams_provider_id: get_string_opt(&store, keys::LLM_DREAMS_PROVIDER_ID),
+        quick_provider_id: get_string_opt(&store, keys::LLM_QUICK_PROVIDER_ID),
     }
 }
 
@@ -140,6 +148,14 @@ pub fn save_role_assignment(app: &AppHandle, assignment: &LlmRoleAssignment) -> 
     store.set(
         keys::LLM_VISION_PROVIDER_ID.to_string(),
         json_string_opt(assignment.vision_provider_id.as_deref()),
+    );
+    store.set(
+        keys::LLM_DREAMS_PROVIDER_ID.to_string(),
+        json_string_opt(assignment.dreams_provider_id.as_deref()),
+    );
+    store.set(
+        keys::LLM_QUICK_PROVIDER_ID.to_string(),
+        json_string_opt(assignment.quick_provider_id.as_deref()),
     );
     store.save().context("Failed to save settings store")?;
     Ok(())
@@ -220,6 +236,72 @@ pub fn resolve_vision_provider(app: &AppHandle) -> Option<LlmProviderConfig> {
     }
 
     tracing::warn!("No usable LLM provider for vision analysis");
+    None
+}
+
+/// 发呆分析使用的 provider。
+pub fn resolve_dreams_provider(app: &AppHandle) -> Option<LlmProviderConfig> {
+    let assignment = load_role_assignment(app);
+    let providers = load_providers(app);
+
+    // 1. Explicit dreams provider
+    if let Some(ref id) = assignment.dreams_provider_id {
+        if let Some(p) = providers.iter().find(|p| p.id == *id) {
+            if p.is_usable() {
+                tracing::info!("Using explicit dreams provider: {} ({})", p.label, p.id);
+                return Some(p.clone());
+            }
+        }
+    }
+
+    // 2. Fallback to chat provider
+    if let Some(ref id) = assignment.chat_provider_id {
+        if let Some(p) = providers.iter().find(|p| p.id == *id) {
+            if p.is_usable() {
+                tracing::warn!(
+                    "Dreams provider not set, falling back to chat provider: {} ({})",
+                    p.label,
+                    p.id
+                );
+                return Some(p.clone());
+            }
+        }
+    }
+
+    tracing::warn!("No usable LLM provider for dreams");
+    None
+}
+
+// 需要快速回应时候用的 provider。
+pub fn resolve_quick_provider(app: &AppHandle) -> Option<LlmProviderConfig> {
+    let assignment = load_role_assignment(app);
+    let providers = load_providers(app);
+
+    // 1. Explicit quick provider
+    if let Some(ref id) = assignment.quick_provider_id {
+        if let Some(p) = providers.iter().find(|p| p.id == *id) {
+            if p.is_usable() {
+                tracing::info!("Using explicit quick provider: {} ({})", p.label, p.id);
+                return Some(p.clone());
+            }
+        }
+    }
+
+    // 2. Fallback to chat provider
+    if let Some(ref id) = assignment.chat_provider_id {
+        if let Some(p) = providers.iter().find(|p| p.id == *id) {
+            if p.is_usable() {
+                tracing::info!(
+                    "Quick provider not set, falling back to chat provider: {} ({})",
+                    p.label,
+                    p.id
+                );
+                return Some(p.clone());
+            }
+        }
+    }
+
+    tracing::warn!("No usable LLM provider for quick analysis");
     None
 }
 
