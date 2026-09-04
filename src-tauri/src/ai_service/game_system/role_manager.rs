@@ -6,7 +6,7 @@ use sea_orm::DatabaseConnection;
 
 use crate::ai_service::game_system::memory_builder::MemoryBuilder;
 use crate::ai_service::game_system::persistent_memory_system::PersistentMemorySystem;
-use crate::ai_service::game_system::node_memory::{recall_node_memory, write_node_memory};
+use crate::ai_service::game_system::vector_memory::{recall_vector_memory, write_vector_memory};
 use crate::ai_service::llm::LlmSlot;
 use crate::ai_service::tts::VoiceMaker;
 use crate::ai_service::tts::local::LocalTtsRuntime;
@@ -324,14 +324,12 @@ impl GameRoleManager {
                             .get(&rid)
                             .and_then(|role| role.display_name.clone());
                         if let Some(display_name) = display_name {
-                            tracing::warn!("(debug) 正在采样角色 {} 的记忆树...", display_name);
-                            let path: Vec<String> = recall_node_memory(
+                            let path: Vec<String> = recall_vector_memory(
                                 &display_name,
                                 8, 
                                 last_line.content().to_string(), 
                                 Some(source_lines.iter().skip(1).map(|line| line.content().to_string()).collect())
                             ).await;
-                            tracing::warn!("(debug) 查到了：{}", path.join(" | "));
                             if !path.is_empty() {
                                 sys_text = format!("{}\n====== 历史记忆 (Past memories) ======\n{}", sys_text, path.join("\n---\n"));
                             }
@@ -382,7 +380,7 @@ impl GameRoleManager {
                         }
                     }
                     // 写入低权重，因为对话原文比较不重要
-                    let _memory_id = write_node_memory(&display_name, talking_name+last_line.content(), Some(0.1)).await;
+                    let _memory_id = write_vector_memory(&display_name, talking_name+last_line.content(), Some(0.1), Some("chat_msg".to_string())).await;
                 }
             }
 

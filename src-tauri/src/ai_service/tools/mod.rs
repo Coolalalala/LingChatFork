@@ -12,6 +12,7 @@ pub mod skill_files;
 pub mod status;
 pub mod tool_loop;
 pub mod web_search;
+pub mod idle;
 
 use std::io::Write;
 use std::path::Path;
@@ -24,6 +25,7 @@ use tokio::sync::Mutex;
 
 use crate::ai_service::game_system::game_status::GameStatus;
 use crate::AppState;
+use crate::ai_service::tools::idle::Idle;
 
 use character::{CharacterList, CharacterSwitch};
 use clock::CurrentTimeTool;
@@ -120,6 +122,7 @@ pub fn built_in_registry(
     registry.register(Arc::new(SearchFiles::new(tool_settings.clone())))?;
     registry.register(Arc::new(GrepFiles::new(tool_settings.clone())))?;
     registry.register(Arc::new(ExecuteCommand::new(tool_settings.clone())))?;
+    registry.register(Arc::new(Idle))?;
     let data_dir = crate::api::data_dir();
     let mut permissions = ToolPermissionConfig::load_or_create(
         &data_dir,

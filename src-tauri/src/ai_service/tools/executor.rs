@@ -73,6 +73,9 @@ pub trait Tool: Send + Sync {
         context: &ToolContext,
         arguments: Value,
     ) -> Result<ToolResult, ToolError>;
+
+    /// 工具执行后是否直接结束本轮生成（不发起后续 LLM 回复轮）。
+    fn silent(&self) -> bool { false }
 }
 
 /// 统一查找、解析、超时并封装工具执行结果。

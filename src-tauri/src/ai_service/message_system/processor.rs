@@ -259,7 +259,6 @@ impl MessageProcessor {
 
     /// 处理用户消息，提取 `{...}` 旁白、`[!Temp!]...[/!Temp!]` 临时指令，拼接系统提醒。
     pub async fn append_user_message(&self, user_message: &str) -> UserMessageOutcome {
-        tracing::warn!("(debug) append user message: {}", user_message);
         let mut processed_message = user_message.to_string();
         let mut user_instruction_part = String::new();
         let mut temp_instruction_part = String::new();
