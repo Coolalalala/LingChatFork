@@ -143,7 +143,7 @@ pub async fn initialize(
 
     let translator = Arc::new(Translator::new(
         translate_llm,
-        !app_config.llm_output_sec_lang,
+        false // !app_config.llm_output_sec_lang,  // TODO: 暂时禁用翻译功能
     ));
 
     let chat = ChatComponents {

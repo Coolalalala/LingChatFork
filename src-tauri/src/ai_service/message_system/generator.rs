@@ -251,7 +251,7 @@ impl MessageGenerator {
         let role = gs.get_role(&self.deps.db, rid).await?;
 
         // 沉淀角色记忆（无显示名的角色跳过）
-        use crate::ai_service::game_system::node_memory::consolidate_memory;
+        use crate::ai_service::game_system::vector_memory::consolidate_memory;
         if let Some(name) = role.display_name.as_deref() {
             consolidate_memory(name, 0.1).await;
         }
@@ -673,7 +673,7 @@ pub(crate) async fn consume_sentence(
     }
 
     // 2. 富化：翻译 + 语音
-    // enrich_segments(deps, &mut segments).await?; // TODO: 临时禁用
+    enrich_segments(deps, &mut segments).await?;
 
     // 3. 构建前端响应
     let mut response =
@@ -755,13 +755,14 @@ async fn enrich_segments(deps: &SentenceDeps, segments: &mut [EmotionSegment]) -
             .unwrap_or_default()
     };
 
-    let translation_language = tts_translation_language(&tts_type, &voice_lang).or_else(|| {
-        if false && voice_lang == "ja" && needs_japanese_translation(segments) { // TODO: 临时关闭
-            Some("ja")
-        } else {
-            None
-        }
-    });
+    // let translation_language = tts_translation_language(&tts_type, &voice_lang).or_else(|| {
+    //     if false && voice_lang == "ja" && needs_japanese_translation(segments) {
+    //         Some("ja")
+    //     } else {
+    //         None
+    //     }
+    // });
+    let translation_language = None; // TODO: 暂时禁用 TTS 翻译
 
     if let Some(target_lang) = translation_language {
         let translated = deps

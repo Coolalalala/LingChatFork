@@ -5,4 +5,4 @@ pub mod persistent_memory_system;
 pub mod role_manager;
 pub mod scene_store;
 pub mod script_engine;
-pub mod node_memory;
+pub mod vector_memory;
