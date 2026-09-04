@@ -180,3 +180,4 @@ AGENTS.md
 # 本地 APK build 路径
 prev-build-*/
 
+src-tauri/debug.db
