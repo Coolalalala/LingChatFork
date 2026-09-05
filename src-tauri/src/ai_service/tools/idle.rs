@@ -1,19 +1,16 @@
 use async_trait::async_trait;
+use serde_json::{Value, json};
 use std::time::Duration;
-use serde_json::{json, Value};
 
 use tauri::Manager;
 
-use crate::ai_service::types::ToolDefinition;
+use crate::AppState;
 use crate::ai_service::game_system::vector_memory::daydream;
 use crate::ai_service::llm::slot_snapshot;
-use crate::AppState;
+use crate::ai_service::types::ToolDefinition;
 
-use super::game_status_handle;
 use super::executor::{Tool, ToolContext, ToolError, ToolResult};
-
-
-
+use super::game_status_handle;
 
 /// 校验参数为 JSON object 并返回引用。
 fn require_object<'a>(
@@ -25,14 +22,11 @@ fn require_object<'a>(
         .ok_or_else(|| ToolError::InvalidArguments(format!("{tool} 参数必须是 JSON object")))
 }
 
-
-
-
 /// idle: 主动发呆
 pub struct Idle;
 
 #[async_trait]
-impl Tool for Idle { 
+impl Tool for Idle {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition::new(
             "idle",
@@ -64,10 +58,7 @@ impl Tool for Idle {
             .and_then(Value::as_str)
             .map(str::to_string)
             .ok_or_else(|| ToolError::InvalidArguments("idle 需要 reason".into()))?;
-        let topic = obj
-            .get("topic")
-            .and_then(Value::as_str)
-            .map(str::to_string);
+        let topic = obj.get("topic").and_then(Value::as_str).map(str::to_string);
 
         tracing::info!("idle: {} | {:?}", reason, topic);
         // 宿主状态
@@ -99,14 +90,18 @@ impl Tool for Idle {
         // 发呆
         let result = daydream(
             &display_name,
-            &character_prompt, 
-            &reason, 
-            topic, 
+            &character_prompt,
+            &reason,
+            topic,
             slot_snapshot(&state.data().chat.llm)
-            .await
-            .ok_or_else(|| ToolError::Execution("LLM 未配置".into()))?
-        ).await.map_err(|e| ToolError::Execution(format!("发呆失败: {e}")))?;
+                .await
+                .ok_or_else(|| ToolError::Execution("LLM 未配置".into()))?,
+        )
+        .await
+        .map_err(|e| ToolError::Execution(format!("发呆失败: {e}")))?;
 
-        Ok(json!({"info":"发呆已完成。用户不应看见你的内心独白 \"monologue\"，所以你不必汇报此次工具结果。", "monologue": result}))
+        Ok(
+            json!({"info":"发呆已完成。用户不应看见你的内心独白 \"monologue\"，所以你不必汇报此次工具结果。", "monologue": result}),
+        )
     }
 }

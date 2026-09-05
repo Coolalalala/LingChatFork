@@ -64,16 +64,14 @@
               <pre
                 class="max-h-40 overflow-y-auto rounded bg-black/30 p-2 text-xs break-all
                   whitespace-pre-wrap text-white/80"
-                >{{ prettyJson(record.arguments) }}</pre
-              >
+                >{{ prettyJson(record.arguments) }}</pre>
             </div>
             <div>
               <p class="mb-1 text-xs text-gray-400">{{ $t("ui.toolCalls.detailResult") }}</p>
               <pre
                 class="max-h-60 overflow-y-auto rounded bg-black/30 p-2 text-xs break-all
                   whitespace-pre-wrap text-white/80"
-                >{{ prettyJson(record.result) }}</pre
-              >
+                >{{ prettyJson(record.result) }}</pre>
             </div>
           </div>
         </li>

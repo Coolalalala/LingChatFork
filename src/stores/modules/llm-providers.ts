@@ -25,11 +25,9 @@ export const useLlmProvidersStore = defineStore("llm-providers", {
       state.providers.find((p) => p.id === state.translateProviderId) ?? null,
     godAgentProvider: (state) =>
       state.providers.find((p) => p.id === state.godAgentProviderId) ?? null,
-    visionProvider: (state) =>state.providers.find((p) => p.id === state.visionProviderId) ?? null,
-    dreamsProvider: (state) =>
-      state.providers.find((p) => p.id === state.dreamsProviderId) ?? null,
-    quickProvider: (state) =>
-      state.providers.find((p) => p.id === state.quickProviderId) ?? null,
+    visionProvider: (state) => state.providers.find((p) => p.id === state.visionProviderId) ?? null,
+    dreamsProvider: (state) => state.providers.find((p) => p.id === state.dreamsProviderId) ?? null,
+    quickProvider: (state) => state.providers.find((p) => p.id === state.quickProviderId) ?? null,
     effectiveGodAgentProvider: (state) => {
       if (state.godAgentProviderId) {
         return state.providers.find((p) => p.id === state.godAgentProviderId) ?? null;

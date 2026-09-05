@@ -1,12 +1,17 @@
 use chrono::{DateTime, Local, Utc};
 use serde_json::Value;
-use std::{collections::HashMap, sync::{Arc, LazyLock, OnceLock}};
+use std::{
+    collections::HashMap,
+    sync::{Arc, LazyLock, OnceLock},
+};
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::spawn_blocking;
 
 use engramai::{EmbeddingConfig, Memory, MemoryConfig, MemoryRecord, MemoryType};
 
-use crate::ai_service::llm::{LlmClient, LlmConfig, LlmSlot, provider_config::resolve_dreams_provider, slot_snapshot};
+use crate::ai_service::llm::{
+    LlmClient, LlmConfig, LlmSlot, provider_config::resolve_dreams_provider, slot_snapshot,
+};
 
 /// 清理角色名中的非法文件名字符，兜底防空/防 `..`。
 /// 复用 memory.rs 笔记模块的同名函数逻辑。
@@ -48,7 +53,10 @@ impl NodeMemory {
             };
 
             use crate::api::data_dir;
-            let memory_path = data_dir().join("game_data").join("memories").join(format!("{}.db", sanitize_role_name(&display_name)));
+            let memory_path = data_dir()
+                .join("game_data")
+                .join("memories")
+                .join(format!("{}.db", sanitize_role_name(&display_name)));
 
             // 确保路径存在
             if let Some(parent) = memory_path.parent() {
@@ -60,34 +68,55 @@ impl NodeMemory {
                 }
             }
 
-            Memory::new(memory_path.to_str().unwrap_or("debug.json"), Some(config))
-                .unwrap_or_else(|e| {
+            Memory::new(memory_path.to_str().unwrap_or("debug.json"), Some(config)).unwrap_or_else(
+                |e| {
                     tracing::error!("Failed to make memory from: {}", e);
                     panic!();
-                })
+                },
+            )
         })
         .await
         .unwrap()
     }
-    
+
     async fn new(display_name: &str) -> Self {
         Self {
-            mem: Arc::new(std::sync::Mutex::new(Self::create_memory(display_name).await)),
+            mem: Arc::new(std::sync::Mutex::new(
+                Self::create_memory(display_name).await,
+            )),
         }
     }
 
     /// 写入新片段
-    async fn write(&self, summary: String, memory_type: MemoryType, importance: Option<f64>, namespace: Option<String>) -> String {
-        tracing::info!("(debug) writing: {} | {:?} | {:?}", summary, importance, namespace);
+    async fn write(
+        &self,
+        summary: String,
+        memory_type: MemoryType,
+        importance: Option<f64>,
+        namespace: Option<String>,
+    ) -> String {
+        tracing::info!(
+            "(debug) writing: {} | {:?} | {:?}",
+            summary,
+            importance,
+            namespace
+        );
         let mutex = self.mem.clone();
         spawn_blocking(move || {
             let mut mem = mutex.lock().unwrap();
-            match mem.add_to_namespace(&summary, memory_type, importance, None, None, namespace.as_deref()) {
+            match mem.add_to_namespace(
+                &summary,
+                memory_type,
+                importance,
+                None,
+                None,
+                namespace.as_deref(),
+            ) {
                 Ok(id) => id,
                 Err(e) => {
                     tracing::error!("Failed to add to memory: {}", e);
                     "".to_string()
-                }
+                },
             }
         })
         .await
@@ -95,7 +124,12 @@ impl NodeMemory {
     }
 
     /// 召回记忆
-    async fn recall(&self, max_nodes: usize, query: String, context: Option<Vec<String>>) -> Vec<String> {
+    async fn recall(
+        &self,
+        max_nodes: usize,
+        query: String,
+        context: Option<Vec<String>>,
+    ) -> Vec<String> {
         let mutex = self.mem.clone();
         spawn_blocking(move || {
             let mut output: Vec<String> = Vec::with_capacity(max_nodes);
@@ -103,15 +137,22 @@ impl NodeMemory {
             let results = match mem.recall(&query, max_nodes, context, None) {
                 Ok(a) => a,
                 Err(e) => {
-                        tracing::error!("Failed to recall from memory: {}", e);
+                    tracing::error!("Failed to recall from memory: {}", e);
                     return Vec::new();
-                }
+                },
             };
 
-            for result in results { 
+            for result in results {
                 output.push(format!(
                     "[confidence = {} ({:.2})] {} [时间：{}]",
-                    result.confidence_label, result.confidence, result.record.content, result.record.created_at.with_timezone(&Local).format("%y/%m/%d，%H:%M")
+                    result.confidence_label,
+                    result.confidence,
+                    result.record.content,
+                    result
+                        .record
+                        .created_at
+                        .with_timezone(&Local)
+                        .format("%y/%m/%d，%H:%M")
                 ));
             }
             tracing::info!("(debug) recalled: {:?}", output);
@@ -148,14 +189,19 @@ impl NodeMemory {
     }
 
     /// 提取距离某个时间最近的 n 条记忆
-    fn recall_in_range(&self, time: DateTime<Utc>, n: usize, namespace: Option<&str>) -> Vec<MemoryRecord> {
+    fn recall_in_range(
+        &self,
+        time: DateTime<Utc>,
+        n: usize,
+        namespace: Option<&str>,
+    ) -> Vec<MemoryRecord> {
         let mem = self.mem.lock().unwrap();
         let mut records = match mem.storage().all_in_namespace(namespace) {
             Ok(r) => r,
             Err(e) => {
                 tracing::error!("Failed to load memories: {}", e);
                 return Vec::new();
-            }
+            },
         };
 
         // Sort by absolute time difference, closest first
@@ -171,14 +217,14 @@ impl NodeMemory {
 }
 
 /// LLM 接口
-static DREAMS_CLIENT: LazyLock<LlmSlot> = LazyLock::new(|| std::sync::Arc::new(tokio::sync::RwLock::new(None)));
+static DREAMS_CLIENT: LazyLock<LlmSlot> =
+    LazyLock::new(|| std::sync::Arc::new(tokio::sync::RwLock::new(None)));
 
 pub async fn set_dreams_client(client: Option<Arc<LlmClient>>) {
     let mut dreams_client = DREAMS_CLIENT.write().await;
     *dreams_client = client;
     tracing::info!("[switch_llm] 发呆 LLM 槽位已热切换");
 }
-
 
 /// 记忆：按角色分文件存储，键为 display_name
 static TREE_MEMS: OnceLock<Mutex<HashMap<String, Arc<NodeMemory>>>> = OnceLock::new();
@@ -231,9 +277,16 @@ pub async fn write_vector_memory(
     display_name: &str,
     summary: String,
     importance: Option<f64>,
-    namespace: Option<String>
+    namespace: Option<String>,
 ) -> String {
-    write_memory_with_type(display_name, summary, MemoryType::Episodic, importance, namespace).await
+    write_memory_with_type(
+        display_name,
+        summary,
+        MemoryType::Episodic,
+        importance,
+        namespace,
+    )
+    .await
 }
 
 /// 写入角色的节点记忆
@@ -242,7 +295,7 @@ pub async fn write_memory_with_type(
     summary: String,
     memory_type: MemoryType,
     importance: Option<f64>,
-    namespace: Option<String>
+    namespace: Option<String>,
 ) -> String {
     get_or_create_mem(display_name)
         .await
@@ -263,7 +316,7 @@ pub async fn recall_node_memory_in_range(
     display_name: &str,
     time: Option<DateTime<Utc>>,
     max_nodes: usize,
-    namespace: Option<&str>
+    namespace: Option<&str>,
 ) -> Vec<MemoryRecord> {
     match time {
         Some(time) => get_or_create_mem(display_name)
@@ -271,19 +324,16 @@ pub async fn recall_node_memory_in_range(
             .recall_in_range(time, max_nodes, namespace),
         None => get_or_create_mem(display_name)
             .await
-            .recall_recent(max_nodes, namespace)
+            .recall_recent(max_nodes, namespace),
     }
 }
-
-
-
 
 pub async fn daydream(
     display_name: &str,
     character_prompt: &str,
     reason: &str,
     topic: Option<String>,
-    llm: Arc<LlmClient>,              // 从 LlmSlot 快照传入
+    llm: Arc<LlmClient>, // 从 LlmSlot 快照传入
 ) -> Result<String, anyhow::Error> {
     // 1. 取素材
     if reason.is_empty() {
@@ -295,42 +345,44 @@ pub async fn daydream(
     for record in records {
         memories_prompt += &format!(
             "\n{}\n[时间：{}]\n---",
-            record.content, record.created_at.with_timezone(&Local).format("%y/%m/%d，%H:%M")
+            record.content,
+            record
+                .created_at
+                .with_timezone(&Local)
+                .format("%y/%m/%d，%H:%M")
         );
     }
-    if let Some(query) = topic {    
-        memories_prompt += &recall_vector_memory(
-            display_name, 
-            8, 
-            query, 
-            None
-        ).await.join("\n---\n");
+    if let Some(query) = topic {
+        memories_prompt += &recall_vector_memory(display_name, 8, query, None)
+            .await
+            .join("\n---\n");
     }
 
-
     // 2. 组 task_prompt
-    let task_prompt = format!("\n\n你正在自己无监管的思绪中发呆，原因是\"{}\"\n", reason)+r#"
+    let task_prompt = format!("\n\n你正在自己无监管的思绪中发呆，原因是\"{}\"\n", reason)
+        + r#"
 接下来无论你产生任何回复都不会被用户观察到，不要对用户说话，不要做出行为或描述场景，只要思考就好。
 接下来请自言自语（比如展望未来，复习刚才对话，或者理性分析），发散出大约 3000 字的文案以解决上述情况。
 "#;
 
     let system_prompt = format!("{}{}{}", character_prompt, task_prompt, memories_prompt);
 
-
     // 3. 自言自语长文
     let Some(monologue_llm) = slot_snapshot(&DREAMS_CLIENT).await else {
         tracing::error!("发呆 LLM 槽位未配置！");
         return Err(anyhow::anyhow!("发呆 LLM 槽位未配置！"));
     };
-    let monologue = monologue_llm.complete(&vec![
-        crate::ai_service::types::LlmMessage::system(system_prompt)
-    ]).await?;
+    let monologue = monologue_llm
+        .complete(&vec![crate::ai_service::types::LlmMessage::system(
+            system_prompt,
+        )])
+        .await?;
     tracing::info!("(debug) 已完成思考：{}", &monologue);
 
-
     // 4. 跑 extraction prompt → JSON insights
-    let extraction_prompt = format!("{}{}",
-r#"
+    let extraction_prompt = format!(
+        "{}{}",
+        r#"
 你是一个专业的【思绪分析专家】。接下来的消息中会包含你自己的思考内容，你的任务是抽取你自己思考内容中的结论。
 请从你思考的长文段中抽取 3-10 条信息（如历史经过，个人观点等）
 不要记录客观上不可察觉的信息（如思绪的过程）
@@ -357,25 +409,30 @@ r#"
     ]
 }
 
-"#,character_prompt);
+"#,
+        character_prompt
+    );
 
     let mut attempts = 0;
     let mut response = "".to_string();
     while attempts < 5 {
-        match llm.complete(&vec![
-            crate::ai_service::types::LlmMessage::system(&extraction_prompt),
-            crate::ai_service::types::LlmMessage::user(&monologue),
-            crate::ai_service::types::LlmMessage::assistant("{"),
-        ]).await {
+        match llm
+            .complete(&vec![
+                crate::ai_service::types::LlmMessage::system(&extraction_prompt),
+                crate::ai_service::types::LlmMessage::user(&monologue),
+                crate::ai_service::types::LlmMessage::assistant("{"),
+            ])
+            .await
+        {
             Ok(result) => {
                 response = result;
                 break;
-            }
+            },
             Err(e) => {
                 tracing::warn!("Extraction failed: {}", e);
                 attempts += 1;
                 continue;
-            }
+            },
         }
     }
     if response.is_empty() {
@@ -386,7 +443,7 @@ r#"
     if !response.starts_with("{") {
         response = "{".to_string() + &response;
     }
-    
+
     // 5. Parse insights
     if let Ok(insights) = serde_json::from_str(&response) {
         let insights: Value = insights;
@@ -399,16 +456,20 @@ r#"
                 continue; // 跳过坏条目
             };
             let _id = write_memory_with_type(
-                display_name, 
-                content.to_string(), 
-                MemoryType::Opinion, 
-                Some(importance), 
-                Some("insight".to_string())
-            ).await;
+                display_name,
+                content.to_string(),
+                MemoryType::Opinion,
+                Some(importance),
+                Some("insight".to_string()),
+            )
+            .await;
         }
         consolidate_memory(display_name, 0.2).await;
     } else {
-        tracing::error!("Failed to parse insights because of invalid JSON: {}", response);
+        tracing::error!(
+            "Failed to parse insights because of invalid JSON: {}",
+            response
+        );
     }
     return Ok(monologue);
 }
