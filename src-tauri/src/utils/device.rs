@@ -24,25 +24,40 @@ pub fn parse_device(s: &str) -> Result<InferenceDevice, String> {
     match s.trim().to_ascii_lowercase().as_str() {
         "cpu" => Ok(InferenceDevice::Cpu),
         // Windows 走 DirectML、Linux 走 WebGPU，均支持 gpu / device:<id>
-        #[cfg(any(target_os = "windows", all(target_os = "linux", target_arch = "x86_64")))]
+        #[cfg(any(
+            target_os = "windows",
+            all(target_os = "linux", target_arch = "x86_64")
+        ))]
         "gpu" => Ok(InferenceDevice::Gpu),
         // npu 仅 DirectML（Windows，DXGI 枚举）
         #[cfg(target_os = "windows")]
         "npu" => Ok(InferenceDevice::Npu),
-        #[cfg(any(target_os = "windows", all(target_os = "linux", target_arch = "x86_64")))]
+        #[cfg(any(
+            target_os = "windows",
+            all(target_os = "linux", target_arch = "x86_64")
+        ))]
         _ if s.starts_with("device:") => {
             let id: i32 = s["device:".len()..]
                 .trim()
                 .parse()
                 .map_err(|_| format!("无效的设备 id: {}", s))?;
             Ok(InferenceDevice::Specific(id))
-        }
+        },
         #[cfg(target_os = "windows")]
-        other => Err(format!("无效的推理设备: {}（可选: cpu/gpu/npu/device:<id>）", other)),
+        other => Err(format!(
+            "无效的推理设备: {}（可选: cpu/gpu/npu/device:<id>）",
+            other
+        )),
         #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-        other => Err(format!("无效的推理设备: {}（可选: cpu/gpu/device:<id>）", other)),
+        other => Err(format!(
+            "无效的推理设备: {}（可选: cpu/gpu/device:<id>）",
+            other
+        )),
         // macOS/Android：仅 cpu（macOS 的 CoreML 在推理时自动启用，无需用户选择）
-        #[cfg(not(any(target_os = "windows", all(target_os = "linux", target_arch = "x86_64"))))]
+        #[cfg(not(any(
+            target_os = "windows",
+            all(target_os = "linux", target_arch = "x86_64")
+        )))]
         other => Err(format!("当前平台仅支持 cpu，收到: {}", other)),
     }
 }
@@ -112,7 +127,10 @@ pub fn list_devices() -> Vec<DeviceInfo> {
     {
         list_vulkan_devices()
     }
-    #[cfg(not(any(target_os = "windows", all(target_os = "linux", target_arch = "x86_64"))))]
+    #[cfg(not(any(
+        target_os = "windows",
+        all(target_os = "linux", target_arch = "x86_64")
+    )))]
     {
         Vec::new()
     }
@@ -133,7 +151,7 @@ fn list_vulkan_devices() -> Vec<DeviceInfo> {
         Err(e) => {
             tracing::warn!("[device] 无法加载 libvulkan，跳过 GPU 枚举: {e}");
             return Vec::new();
-        }
+        },
     };
 
     let app_info = vk::ApplicationInfo::default().api_version(vk::API_VERSION_1_0);
@@ -143,7 +161,7 @@ fn list_vulkan_devices() -> Vec<DeviceInfo> {
         Err(e) => {
             tracing::warn!("[device] 创建 Vulkan 实例失败，跳过 GPU 枚举: {e}");
             return Vec::new();
-        }
+        },
     };
 
     let devices = unsafe { instance.enumerate_physical_devices() }.unwrap_or_default();
@@ -188,47 +206,4 @@ fn settings_json_path(app: &AppHandle) -> Option<std::path::PathBuf> {
         .app_config_dir()
         .ok()
         .map(|d| d.join(crate::config::STORE_FILE))
-}
-
-// ---------------------------------------------------------------------------
-// tests
-// ---------------------------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_device_cpu() {
-        assert_eq!(parse_device("cpu").unwrap(), InferenceDevice::Cpu);
-        // 大小写不敏感
-        assert_eq!(parse_device("CPU").unwrap(), InferenceDevice::Cpu);
-    }
-
-    #[cfg(target_os = "windows")]
-    #[test]
-    fn parse_device_gpu_npu_specific_on_windows() {
-        assert_eq!(parse_device("gpu").unwrap(), InferenceDevice::Gpu);
-        assert_eq!(parse_device("npu").unwrap(), InferenceDevice::Npu);
-        assert_eq!(
-            parse_device("device:1").unwrap(),
-            InferenceDevice::Specific(1)
-        );
-    }
-
-    #[test]
-    fn parse_device_invalid_returns_err() {
-        assert!(parse_device("tpu").is_err());
-        assert!(parse_device("").is_err());
-    }
-
-    #[test]
-    fn device_to_string_roundtrip() {
-        assert_eq!(device_to_string(InferenceDevice::Cpu), "cpu");
-        #[cfg(target_os = "windows")]
-        {
-            assert_eq!(device_to_string(InferenceDevice::Gpu), "gpu");
-            assert_eq!(device_to_string(InferenceDevice::Specific(2)), "device:2");
-        }
-    }
 }

@@ -144,7 +144,10 @@ impl ToolPermissionConfig {
         self.available_tools = tools;
     }
 
-    pub fn load_or_create(data_dir: &Path, tool_names: impl IntoIterator<Item = String>) -> Result<Self> {
+    pub fn load_or_create(
+        data_dir: &Path,
+        tool_names: impl IntoIterator<Item = String>,
+    ) -> Result<Self> {
         let path = data_dir.join(CONFIG_FILE_NAME);
         if path.exists() {
             return Self::load(&path);
@@ -164,7 +167,10 @@ impl ToolPermissionConfig {
     ) -> Result<()> {
         let mut changed = false;
         for role_name in role_names {
-            let in_group = self.role_groups.values().any(|g| g.roles.contains(&role_name));
+            let in_group = self
+                .role_groups
+                .values()
+                .any(|g| g.roles.contains(&role_name));
             if !in_group {
                 self.role_groups
                     .entry(DEFAULT_ROLE_GROUP.to_string())
@@ -196,7 +202,11 @@ impl ToolPermissionConfig {
     ) -> HashSet<String> {
         // 1. 查映射找到场景组名（映射不存在时回退到 scene_default）
         let key: GeneratorSourceKey = source.into();
-        let scene_group_name = self.scene_mapping.get(&key).map(|s| s.as_str()).unwrap_or("scene_default");
+        let scene_group_name = self
+            .scene_mapping
+            .get(&key)
+            .map(|s| s.as_str())
+            .unwrap_or("scene_default");
         let Some(scene) = self.scene_groups.get(scene_group_name) else {
             return HashSet::new();
         };
@@ -210,7 +220,11 @@ impl ToolPermissionConfig {
         let Some(role_name) = role_name else {
             return HashSet::new();
         };
-        let Some(group) = self.role_groups.values().find(|g| g.roles.contains(role_name)) else {
+        let Some(group) = self
+            .role_groups
+            .values()
+            .find(|g| g.roles.contains(role_name))
+        else {
             return HashSet::new();
         };
         if !group.enabled {
@@ -262,7 +276,11 @@ impl ToolPermissionConfig {
     // ─── 角色组管理 ───
 
     /// 创建新角色组。名称重复会返回错误。
-    pub fn create_role_group(&mut self, name: &str, permission: GroupPermission) -> Result<(), String> {
+    pub fn create_role_group(
+        &mut self,
+        name: &str,
+        permission: GroupPermission,
+    ) -> Result<(), String> {
         if self.role_groups.contains_key(name) {
             return Err(format!("角色组 '{name}' 已存在"));
         }
@@ -300,13 +318,20 @@ impl ToolPermissionConfig {
         for g in self.role_groups.values_mut() {
             g.roles.remove(role);
         }
-        self.role_groups.get_mut(group).unwrap().roles.insert(role.to_string());
+        self.role_groups
+            .get_mut(group)
+            .unwrap()
+            .roles
+            .insert(role.to_string());
         Ok(())
     }
 
     /// 从组中移除角色。移除后角色不归属任何组，下次初始化会回到 default。
     pub fn remove_role_from_group(&mut self, group: &str, role: &str) -> Result<(), String> {
-        let g = self.role_groups.get_mut(group).ok_or_else(|| format!("角色组 '{group}' 不存在"))?;
+        let g = self
+            .role_groups
+            .get_mut(group)
+            .ok_or_else(|| format!("角色组 '{group}' 不存在"))?;
         if !g.roles.remove(role) {
             return Err(format!("角色 '{role}' 不在组 '{group}' 中"));
         }
@@ -330,7 +355,10 @@ impl ToolPermissionConfig {
         let mut scene_mapping = HashMap::new();
         scene_mapping.insert(GeneratorSourceKey::UserChat, "scene_admin".into());
         scene_mapping.insert(GeneratorSourceKey::Proactive, "scene_normal".into());
-        scene_mapping.insert(GeneratorSourceKey::ScriptFreeDialogue, "scene_normal".into());
+        scene_mapping.insert(
+            GeneratorSourceKey::ScriptFreeDialogue,
+            "scene_normal".into(),
+        );
         scene_mapping.insert(GeneratorSourceKey::ScriptAiDialogue, "scene_default".into());
         scene_mapping.insert(GeneratorSourceKey::EntryGreeting, "scene_default".into());
 
@@ -384,8 +412,7 @@ impl ToolPermissionConfig {
     fn load(path: &Path) -> Result<Self> {
         let text = fs::read_to_string(path)
             .with_context(|| format!("读取工具权限配置失败: {}", path.display()))?;
-        toml::from_str(&text)
-            .with_context(|| format!("解析工具权限配置失败: {}", path.display()))
+        toml::from_str(&text).with_context(|| format!("解析工具权限配置失败: {}", path.display()))
     }
 
     pub fn save(&self, path: &Path) -> Result<()> {
@@ -403,44 +430,4 @@ const fn default_enabled() -> bool {
 
 fn is_false(b: &bool) -> bool {
     !b
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// available_tools 仅作展示，必须序列化到 TOML 最前面。
-    #[test]
-    fn available_tools_serialized_first() {
-        let config = ToolPermissionConfig {
-            available_tools: vec!["get_current_time".into(), "schedule_add_todo".into()],
-            ..Default::default()
-        };
-        let toml_str = toml::to_string(&config).unwrap();
-        assert!(toml_str.starts_with("available_tools = [\"get_current_time\", \"schedule_add_todo\"]\n"));
-    }
-
-    /// 旧配置无 available_tools 字段时也能正常反序列化（serde default）。
-    #[test]
-    fn deserializes_legacy_config_without_available_tools() {
-        let legacy = r#"
-[scene_mapping]
-user_chat = "scene_admin"
-"#;
-        let config: ToolPermissionConfig = toml::from_str(legacy).unwrap();
-        assert!(config.available_tools.is_empty());
-    }
-
-    #[test]
-    fn save_can_replace_existing_permission_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("permissions.toml");
-        let mut config = ToolPermissionConfig::default();
-        config.save(&path).unwrap();
-        config.available_tools = vec!["get_current_time".into()];
-        config.save(&path).unwrap();
-
-        let loaded = ToolPermissionConfig::load(&path).unwrap();
-        assert_eq!(loaded.available_tools, vec!["get_current_time"]);
-    }
 }

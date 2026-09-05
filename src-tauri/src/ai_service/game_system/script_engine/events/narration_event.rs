@@ -5,10 +5,10 @@ use async_trait::async_trait;
 use serde_json::Value;
 
 use crate::ai_service::game_system::script_engine::events::{
-    parse_duration, register_event, ScriptContext, ScriptEvent,
+    ScriptContext, ScriptEvent, parse_duration, register_event,
 };
 use crate::ai_service::game_system::script_engine::responses::{
-    event_names::SCRIPT_NARRATION, NarrationPayload,
+    NarrationPayload, event_names::SCRIPT_NARRATION,
 };
 use crate::ai_service::message_system::events::emit;
 use crate::ai_service::types::{LineAttributeExt, LineBase};
@@ -72,10 +72,6 @@ impl ScriptEvent for NarrationEvent {
 
     fn event_type() -> &'static str {
         "narration"
-    }
-
-    fn duration(&self) -> Option<f64> {
-        self.duration
     }
 }
 

@@ -2,9 +2,9 @@
 
 use std::collections::HashMap;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
-use serde_json::{json, Value as JsonValue};
+use serde_json::{Value as JsonValue, json};
 
 use crate::ai_service::tts::adapters::http_client;
 use crate::ai_service::tts::provider::TtsAdapter;
@@ -18,19 +18,24 @@ pub struct IndexTtsAdapter {
 }
 
 impl IndexTtsAdapter {
-    pub fn new(base_url: String) -> Self {
+    /// lang 为合成目标语言（zh/ja/en/es/ar 等），随请求透传给服务端；
+    /// IndexTTS 2.5 起服务端按该参数选择多语言合成前端。
+    pub fn new(base_url: String, lang: String) -> Self {
         Self {
             base_url,
             speaker_id: 0,
             audio_format: "wav".into(),
-            lang: "zh".into(),
+            lang,
         }
     }
 }
 
 impl Default for IndexTtsAdapter {
     fn default() -> Self {
-        Self::new("http://127.0.0.1:23467/voice/indextts/presets".into())
+        Self::new(
+            "http://127.0.0.1:23467/voice/indextts/presets".into(),
+            "zh".into(),
+        )
     }
 }
 

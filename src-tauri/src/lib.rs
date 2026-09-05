@@ -2,14 +2,13 @@ mod achievements;
 mod adventures;
 mod ai_service;
 mod api;
+mod cast;
 mod config;
 mod db;
 mod init;
 mod lan_sync;
 mod manifest;
 mod migration;
-// 插件系统由 RustPython 驱动，移动端（Android/iOS）构建时依赖不可用，整体排除
-#[cfg(desktop)]
 mod plugins;
 mod resource_sync;
 pub mod utils;
@@ -18,14 +17,15 @@ use std::sync::Arc;
 
 use chrono::Local;
 use sea_orm::DatabaseConnection;
-use tauri::Manager;
+#[cfg(desktop)]
+use tauri::Emitter;
+use tauri::{Listener, Manager};
 use tracing_subscriber::fmt::time::FormatTime;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::Layer;
 
-use ai_service::god_agent::config::resolve_god_agent_provider;
 use ai_service::god_agent::GodAgentCore;
+use ai_service::god_agent::config::resolve_god_agent_provider;
 use ai_service::llm::LlmSlot;
 use ai_service::message_system::processor::MessageProcessor;
 use ai_service::screen_analyzer::{ScreenAnalyzer, ScreenAnalyzerConfig};
@@ -39,6 +39,21 @@ struct LocalTimer;
 impl FormatTime for LocalTimer {
     fn format_time(&self, w: &mut tracing_subscriber::fmt::format::Writer<'_>) -> std::fmt::Result {
         write!(w, "{}", Local::now().format("%H:%M:%S"))
+    }
+}
+
+/// 构建日志过滤器。
+///
+/// `genai_debug` 为 true 时把 `genai` crate 的日志级别从 error 提到 debug，
+/// 用于查看 LLM 请求/响应细节（默认关闭，由 `log.genai_debug` 设置控制）。
+fn build_log_filter(genai_debug: bool) -> tracing_subscriber::EnvFilter {
+    let base = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn,ling_chat_lib=info"))
+        .add_directive("sqlx=warn".parse().unwrap());
+    if genai_debug {
+        base.add_directive("genai=debug".parse().unwrap())
+    } else {
+        base.add_directive("genai=error".parse().unwrap())
     }
 }
 
@@ -80,8 +95,7 @@ pub struct InnerAppState {
     pub tool_registry: Arc<ToolRegistry>,
     /// 聊天工具的用户配置（网页搜索 API Key、代理等），热更新共享句柄。
     pub tool_settings: ai_service::tools::settings::SharedToolSettings,
-    /// 插件管理器（扫描/启停/配置）。仅桌面端可用。
-    #[cfg(desktop)]
+    /// 插件管理器（扫描/启停/配置）。
     pub plugin_manager: Arc<plugins::PluginManager>,
     pub proactive_system:
         Option<Arc<tokio::sync::Mutex<ai_service::proactive_system::ProactiveSystem>>>,
@@ -94,17 +108,20 @@ pub struct InnerAppState {
     /// 自动存档管理器。
     pub auto_save_manager:
         Arc<tokio::sync::Mutex<ai_service::game_system::auto_save::AutoSaveManager>>,
+    /// ASR 服务状态（详见 [`crate::ai_service::asr`]）。
+    pub asr_state: Arc<ai_service::asr::AsrState>,
     /// 上帝 Agent（多人对话编排器，可选）。
     pub god_agent: Option<Arc<GodAgentCore>>,
     /// Skill Agent（剧本编辑器 AI 助手）共享状态。
     pub skill_agent: Arc<ai_service::skill_agent::SkillAgentState>,
     /// 主聊天 `execute_command` 工具的待审批命令请求（request_id → oneshot）。
     pub chat_command_approvals: ai_service::skill_agent::ApprovalMap,
+    /// 主聊天 `write_file` / `edit_file` 工具的待审批修改请求。
+    pub chat_file_change_approvals: ai_service::skill_agent::ApprovalMap,
     /// 主聊天 `delete_file` 工具的待审批删除请求（request_id → oneshot）。
     pub chat_file_delete_approvals: ai_service::skill_agent::ApprovalMap,
     /// 主聊天后台命令的并发槽位与任务 ID 分配器。
-    pub background_commands:
-        Arc<ai_service::tools::background_command::BackgroundCommandManager>,
+    pub background_commands: Arc<ai_service::tools::background_command::BackgroundCommandManager>,
     /// 剧本编辑器「试玩」当前在跑的后台任务句柄。
     ///
     /// `editor_stop_preview` 会先唤醒被剧本阻塞的通道、把 `is_running` 置 false，
@@ -114,7 +131,8 @@ pub struct InnerAppState {
     pub preview_task: Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
     /// 试玩开始时拍下的会话快照，供收尾时一次性还原。`Option::take` 保证幂等：
     /// 任务自然结束先还原、`editor_stop_preview` 兜底再 take 一次为空即跳过。
-    pub pending_preview_restore: Arc<tokio::sync::Mutex<Option<api::script_editor::PreviewSession>>>,
+    pub pending_preview_restore:
+        Arc<tokio::sync::Mutex<Option<api::script_editor::PreviewSession>>>,
 }
 
 /// AppState 在 Tauri 中 manage 的状态句柄。
@@ -187,38 +205,73 @@ impl std::ops::Deref for AppState {
     }
 }
 
+/// 读取 settings.json 中的「HDR 模式」开关（仅 Windows）。
+///
+/// 必须在 WebView2 环境创建（`Builder::build()`）之前调用——此时 `AppHandle` 尚不存在，
+/// 只能直接解析 store 文件。store 位于 `%APPDATA%\<identifier>\settings.json`
+/// （tauri-plugin-store 的 flat 点号键）。文件缺失/解析失败一律视为「未开启」。
+#[cfg(target_os = "windows")]
+fn read_hdr_mode_enabled(identifier: &str) -> bool {
+    use serde_json::Value;
+
+    let Some(appdata) = std::env::var("APPDATA").ok() else {
+        return false;
+    };
+    let path = std::path::Path::new(&appdata)
+        .join(identifier)
+        .join(crate::config::STORE_FILE);
+
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    let Ok(json) = serde_json::from_str::<Value>(&content) else {
+        return false;
+    };
+    json.get(crate::config::keys::HDR_MODE_ENABLED)
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // 配置日志过滤器
-    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn,ling_chat_lib=info"))
-        .add_directive("sqlx=warn".parse().unwrap())
-        .add_directive("genai=error".parse().unwrap());
+    // TLS 兜底：rustls 依赖图同时启用 aws-lc-rs（本项目显式）与 ring
+    // （tokio-tungstenite rustls-tls-webpki-roots 引入）两个 crypto feature，
+    // 进程级默认 provider 无法自动确定 → 走默认 ClientConfig::builder() 的
+    // 路径（如 ASR 流式 WebSocket 握手）会 panic。显式安装 aws-lc-rs 为默认。
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
+    // 配置日志过滤器（genai 调试日志由 log.genai_debug 设置在 setup 阶段动态控制）。
+    // reload::Layer 包装的 EnvFilter 作为全局过滤层，避免在多个 fmt layer 上 clone 的限制。
+    let (filter, reload_handle) = tracing_subscriber::reload::Layer::new(build_log_filter(false));
 
     // 初始化日志系统
     tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::fmt::layer()
-                .with_timer(LocalTimer)
-                .with_filter(filter.clone()),
-        )
-        .with(utils::log_bridge::LogBridgeLayer.with_filter(filter.clone()))
+        .with(tracing_subscriber::fmt::layer().with_timer(LocalTimer))
+        .with(utils::log_bridge::LogBridgeLayer)
         .with(
             tracing_subscriber::fmt::layer()
                 .with_writer(utils::file_logger::LogFileWriter)
                 .with_timer(LocalTimer)
-                .with_ansi(false)
-                .with_filter(filter),
+                .with_ansi(false),
         )
+        .with(filter)
         .init();
 
-    // 设置 WebView2 颜色配置文件（强制使用线性 sRGB）
-    #[allow(deprecated)]
-    unsafe {
-        std::env::set_var(
-            "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
-            "--force-color-profile=scrgb-linear",
-        );
+    // 提前构建 Tauri 上下文（读取 bundle identifier，供 Windows HDR 开关定位 settings.json）
+    let context = tauri::generate_context!();
+
+    // Windows：设置 WebView2 颜色配置文件（强制使用线性 sRGB）。
+    #[cfg(target_os = "windows")]
+    {
+        if !read_hdr_mode_enabled(&context.config().identifier) {
+            #[allow(deprecated)]
+            unsafe {
+                std::env::set_var(
+                    "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+                    "--force-color-profile=scrgb-linear",
+                );
+            }
+        }
     }
 
     // 构建 Tauri 应用
@@ -238,7 +291,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init());
 
     builder
-        .setup(|app| {
+        .setup(move |app| {
             // 设置日志桥接的应用句柄
             utils::log_bridge::set_app_handle(app.handle().clone());
 
@@ -250,7 +303,9 @@ pub fn run() {
             app.manage(api::pet::HitTestState::default());
             app.manage(resource_sync::ResourceSyncState::default());
             app.manage(lan_sync::LanSyncState::default());
+            app.manage(cast::CastManager::default());
             app.manage(utils::cpu_perf::CpuDetectionCache::new());
+            app.manage(utils::gpu_perf::GpuDetectionCache::new());
             app.manage(api::role_archive::RoleArchiveState::default());
 
             // Android 修复：Tauri 在 setup 闭包执行前已创建 webview 窗口，前端 invoke
@@ -290,7 +345,43 @@ pub fn run() {
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
                 utils::llm_request_logger::init(data_dir, llm_request_log_enable);
+
+                // 应用 genai 调试日志开关（log.genai_debug，默认关闭）
+                let genai_debug = store
+                    .as_ref()
+                    .and_then(|s| s.get(config::keys::LOG_GENAI_DEBUG))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                if let Err(e) = reload_handle.reload(build_log_filter(genai_debug)) {
+                    tracing::warn!("应用日志过滤器失败: {e}");
+                }
             }
+
+            // 热重载 genai 调试日志：settings store 变更时即时生效（无需重启）
+            let app_handle = app.handle().clone();
+            app_handle.listen("store://change", move |event| {
+                #[derive(serde::Deserialize)]
+                struct StoreChangePayload {
+                    key: String,
+                    value: Option<serde_json::Value>,
+                }
+                let Ok(payload) = serde_json::from_str::<StoreChangePayload>(event.payload())
+                else {
+                    return;
+                };
+                if payload.key != config::keys::LOG_GENAI_DEBUG {
+                    return;
+                }
+                let genai_debug = matches!(payload.value, Some(serde_json::Value::Bool(true)));
+                if let Err(e) = reload_handle.reload(build_log_filter(genai_debug)) {
+                    tracing::warn!("热重载 genai 调试日志失败: {e}");
+                } else {
+                    tracing::info!(
+                        "genai 调试日志已{}",
+                        if genai_debug { "开启" } else { "关闭" }
+                    );
+                }
+            });
 
             // 启动时自动清理未被引用的孤立语音文件
             match rt.block_on(init::voice_cleanup::cleanup_orphan_voice_files(
@@ -299,10 +390,10 @@ pub fn run() {
             )) {
                 Ok(stats) => {
                     tracing::info!("语音文件清理完成: 删除 {} 个文件", stats.deleted_count);
-                }
+                },
                 Err(e) => {
                     tracing::warn!("语音文件清理失败（非致命错误）: {e:#}");
-                }
+                },
             }
 
             // 创建脚本引擎通道
@@ -312,20 +403,18 @@ pub fn run() {
 
             // 创建生成锁
             let generation_lock = std::sync::Arc::new(tokio::sync::Mutex::new(()));
-            let role_names = rt
-                .block_on(db::managers::role_repo::RoleRepo::get_all_tool_role_names(&db))?;
+            let role_names = rt.block_on(
+                db::managers::role_repo::RoleRepo::get_all_tool_role_names(&db),
+            )?;
             let tool_settings = ai_service::tools::settings::SharedToolSettings::new(
                 ai_service::tools::settings::ToolSettings::load_or_create(&api::data_dir())?,
             );
             let tool_registry = Arc::new(ai_service::tools::built_in_registry(
                 role_names,
                 tool_settings.clone(),
-                app.handle().clone(),
             )?);
 
             // 插件系统：确保 data/plugins 目录存在并扫描加载插件（工具注册进 registry）。
-            // 移动端（Android/iOS）不编译插件系统，跳过此段。
-            #[cfg(desktop)]
             let plugin_manager = {
                 let data_dir = api::data_dir();
                 let plugins_root = data_dir.join("plugins");
@@ -413,16 +502,19 @@ pub fn run() {
                     generation_lock,
                     tool_registry,
                     tool_settings,
-                    #[cfg(desktop)]
                     plugin_manager,
                     proactive_system: Some(proactive),
                     achievement_manager,
                     screen_analyzer,
                     screenshot_capture,
                     auto_save_manager: auto_save_manager.clone(),
+                    asr_state: Arc::new(ai_service::asr::AsrState {
+                        session: Arc::new(tokio::sync::Mutex::new(None)),
+                    }),
                     god_agent,
                     skill_agent: Arc::new(ai_service::skill_agent::SkillAgentState::default()),
                     chat_command_approvals: Default::default(),
+                    chat_file_change_approvals: Default::default(),
                     chat_file_delete_approvals: Default::default(),
                     background_commands: Arc::new(
                         ai_service::tools::background_command::BackgroundCommandManager::default(),
@@ -432,12 +524,44 @@ pub fn run() {
                 });
             }
 
+            // ASR 初始化：VAD 模型 + provider registry。失败仅 warn 不阻塞主程序。
+            {
+                let state = app.state::<AppState>();
+                let asr_state = state.asr_state.clone();
+                if let Err(e) = rt.block_on(init::init_asr(app.handle(), &asr_state)) {
+                    tracing::warn!("[ASR] init_asr 失败，ASR 功能不可用: {e:#}");
+                }
+            }
+            // 投屏自动启动：设置 cast.enabled=true 时，启动即打开投屏窗口并开启串流服务。
+            // 延迟到主界面就绪后再做，避免投屏窗口先于主界面拿到场景快照。
+            {
+                let store = config::settings_store(app.handle()).ok();
+                let cast_enabled = store
+                    .as_ref()
+                    .and_then(|s| s.get(config::keys::CAST_ENABLED))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                if cast_enabled {
+                    let app_handle = app.handle().clone();
+                    tauri::async_runtime::spawn(async move {
+                        tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+                        let cast = app_handle.state::<cast::CastManager>();
+                        if let Err(e) = cast::start_cast_server(&app_handle, &cast).await {
+                            tracing::warn!("[Cast] 启动时自动开启投屏失败: {e}");
+                        }
+                    });
+                }
+            }
+
+            // 插件携带资源收敛：把启用插件的人物/剧本/背景图同步进 DB / 剧本引擎 / 场景表。
+            rt.block_on(api::plugins::refresh_plugin_content(app.handle()));
+
             // 延迟加载 DeBerta 直到应用主体挂载完成；
             // 如果在加载完成前有聊天请求到达，LocalTtsAdapter 的惰性引导仍然会运行，
             // 因此首次消息延迟是启动时加载的代价。
             ai_service::tts::local::setup::spawn_preload(&app.handle(), &local_tts);
 
-            // 启动 Windows 鼠标轮询点击穿透循环
+            // 启动鼠标轮询点击穿透循环
             let window = app
                 .get_webview_window("main")
                 .ok_or_else(|| tauri::Error::AssetNotFound("main window not found".to_string()))?;
@@ -457,13 +581,19 @@ pub fn run() {
                 .await;
             });
 
-            // Windows 点击穿透逻辑
-            let hit_test_state = app.state::<api::pet::HitTestState>();
-            let rects_arc = hit_test_state.solid_rects.clone();
-            let enabled_arc = hit_test_state.enabled.clone();
-
-            #[cfg(target_os = "windows")]
+            // 桌宠点击穿透：全局轮询鼠标位置，只有落在前端上报的 solid 区域内才接收鼠标事件，
+            // 其余透明区域把点击让给底下的窗口。
+            //
+            // 原本用 Win32 的 GetCursorPos，因此整段是 cfg(windows) 独占，macOS 上桌宠窗口
+            // 会整块挡住底下窗口的点击。cursor_position() 与 set_ignore_cursor_events() 都是
+            // Tauri 的跨平台 API，改用前者后三个桌面平台可以共用同一个循环。
+            // （Linux 未实测：X11 / Wayland 下最差情况是 API 返回 Err，本轮直接跳过。）
+            #[cfg(desktop)]
             {
+                let hit_test_state = app.state::<api::pet::HitTestState>();
+                let rects_arc = hit_test_state.solid_rects.clone();
+                let enabled_arc = hit_test_state.enabled.clone();
+
                 tauri::async_runtime::spawn(async move {
                     let mut was_ignored = false;
                     loop {
@@ -483,21 +613,30 @@ pub fn run() {
                             continue;
                         }
 
-                        use windows::Win32::Foundation::POINT;
-                        use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
-
-                        let mut pt = POINT { x: 0, y: 0 };
-                        unsafe {
-                            let _ = GetCursorPos(&mut pt);
-                        }
+                        // 桌面全局坐标（物理像素），与 outer_position() 同一坐标系
+                        let Ok(cursor) = window.cursor_position() else {
+                            continue;
+                        };
 
                         if let Ok(window_pos) = window.outer_position() {
                             if let Ok(scale_factor) = window.scale_factor() {
-                                let mouse_x = f64::from(pt.x) - f64::from(window_pos.x);
-                                let mouse_y = f64::from(pt.y) - f64::from(window_pos.y);
+                                let mouse_x = cursor.x - f64::from(window_pos.x);
+                                let mouse_y = cursor.y - f64::from(window_pos.y);
 
                                 let logical_x = mouse_x / scale_factor;
                                 let logical_y = mouse_y / scale_factor;
+
+                                // 向桌宠前端广播全局鼠标位置：桌宠窗口非全屏，DOM
+                                // pointermove 在鼠标移出窗口后停发，Live2D 视线会冻结在
+                                // 最后一次窗口内位置。这里把窗口内逻辑坐标（即 webview
+                                // 视口坐标）发给前端驱动视线，与 DOM clientX/Y 同坐标系。
+                                let _ = window.emit(
+                                    "pet:cursor",
+                                    api::pet::CursorPosition {
+                                        x: logical_x,
+                                        y: logical_y,
+                                    },
+                                );
 
                                 let mut is_over_solid = false;
                                 if let Ok(rects) = rects_arc.lock() {
@@ -537,16 +676,17 @@ pub fn run() {
             utils::log_bridge::get_log_history,
             utils::log_bridge::open_log_window,
             utils::log_bridge::is_log_window_open,
-            #[cfg(desktop)]
             api::plugins::plugin_list,
-            #[cfg(desktop)]
             api::plugins::plugin_set_enabled,
-            #[cfg(desktop)]
             api::plugins::plugin_save_config,
-            #[cfg(desktop)]
             api::plugins::plugin_reload,
-            #[cfg(desktop)]
             api::plugins::plugin_delete,
+            api::plugins::plugin_resources,
+            api::plugins::plugin_resource_hide,
+            api::plugins::plugin_resource_restore,
+            api::plugins::plugin_resource_keep,
+            api::plugins::import_plugin_from_path,
+            api::plugins::cancel_plugin_import,
             api::settings::get_settings_tree,
             api::settings::save_settings,
             api::settings::get_setting_by_key,
@@ -554,10 +694,17 @@ pub fn run() {
             api::settings::list_llm_providers,
             api::settings::save_llm_provider,
             api::settings::delete_llm_provider,
+            #[cfg(target_os = "windows")]
+            api::settings::set_hdr_mode,
             api::settings::set_llm_role,
             api::settings::switch_llm,
             api::settings::test_llm_provider,
             api::settings::list_llm_models,
+            api::codex::codex_auth_status,
+            api::codex::codex_start_login,
+            api::codex::codex_poll_login,
+            api::codex::codex_logout,
+            api::codex::codex_get_quota,
             api::font::list_system_fonts,
             api::font::import_font,
             api::font::list_imported_fonts,
@@ -571,6 +718,9 @@ pub fn run() {
             api::character::update_role_settings,
             api::character::delete_character,
             api::character::open_characters_folder,
+            api::live2d::import_live2d,
+            api::live2d::get_live2d_file,
+            api::live2d::inspect_live2d,
             api::background::get_background_list,
             api::background::get_background_file,
             api::background::upload_background_image,
@@ -661,10 +811,12 @@ pub fn run() {
             api::script_editor::agent::editor_agent_create_conversation,
             api::script_editor::agent::editor_agent_list_conversations,
             api::script_editor::agent::editor_agent_delete_conversation,
+            api::script_editor::agent::editor_agent_rename_conversation,
             api::script_editor::agent::editor_agent_get_messages,
             api::script_editor::agent::editor_agent_clear_conversation,
             api::script_editor::agent::editor_agent_start_chat,
             api::script_editor::agent::editor_agent_stop_chat,
+            api::script_editor::agent::editor_agent_rewind,
             api::script_editor::agent::editor_agent_resolve_approval,
             api::pet::update_solid_regions,
             api::pet::set_pet_mode,
@@ -673,9 +825,13 @@ pub fn run() {
             api::schedule::reload_proactive_system,
             api::proactive_set_can_deliver,
             api::tool_settings::get_tool_settings,
+            api::tool_settings::get_tool_runtime_info,
             api::tool_settings::save_tool_settings,
             api::tool_settings::test_web_search,
+            api::tool_settings::get_tool_elevation_status,
+            api::tool_settings::restart_tool_process_as_admin,
             api::tool_settings::resolve_command_approval,
+            api::tool_settings::resolve_file_change_approval,
             api::tool_settings::resolve_file_delete_approval,
             api::achievement::get_achievement_list,
             api::achievement::unlock_achievement,
@@ -696,8 +852,21 @@ pub fn run() {
             lan_sync::lan_sync_plan_pull,
             lan_sync::lan_sync_execute_pull,
             lan_sync::lan_sync_restart,
+            // ── 投屏（Screen Cast）──
+            cast::cast_open_window,
+            cast::cast_close_window,
+            cast::cast_start,
+            cast::cast_stop,
+            cast::cast_get_status,
+            cast::cast_get_snapshot,
+            cast::cast_emit_mirror,
+            cast::cast_get_mirror,
+            cast::cast_play_voice,
             utils::cpu_perf::get_cpu_info,
             utils::cpu_perf::redetect_cpu,
+            utils::gpu_perf::get_gpu_info,
+            utils::gpu_perf::redetect_gpu,
+            utils::gpu_perf::grade_active_gpu,
             api::role_archive::import_role,
             api::role_archive::import_role_from_path,
             api::role_archive::cancel_role_import,
@@ -711,17 +880,42 @@ pub fn run() {
             ai_service::tts::local::tts_local_import_from_path,
             ai_service::tts::local::tts_local_download,
             ai_service::tts::local::tts_local_delete_voice,
+            ai_service::tts::local::tts_local_delete_deberta,
             ai_service::tts::local::tts_local_import_style_vectors,
             ai_service::tts::local::tts_local_synthesize_preview,
             ai_service::tts::local::tts_local_get_enabled,
+            ai_service::tts::cloud::commands::cosyvoice_get_config,
+            ai_service::tts::cloud::commands::cosyvoice_save_api_key,
+            ai_service::tts::cloud::commands::cosyvoice_create_voice,
+            ai_service::tts::cloud::commands::cosyvoice_voice_status,
+            ai_service::tts::cloud::commands::cosyvoice_list_voices,
+            ai_service::tts::cloud::commands::cosyvoice_delete_voice,
+            ai_service::tts::cloud::commands::cosyvoice_synthesize_preview,
             ai_service::tts::local::tts_local_set_enabled,
             // 推理设备选择：获取当前设备 / 枚举可用设备 / 切换设备
             ai_service::tts::local::tts_local_get_device,
             ai_service::tts::local::tts_local_list_devices,
             ai_service::tts::local::tts_local_set_device,
+            // ASR 相关命令
+            api::asr::asr_start_listening,
+            api::asr::asr_stop_listening,
+            api::asr::asr_vad_process_chunk,
+            api::asr::asr_recognize_wav,
+            api::asr::asr_recognize_wav_stream,
+            api::asr::asr_cancel,
+            api::asr::asr_list_providers,
+            api::asr::asr_list_models,
+            api::asr::asr_get_settings,
+            api::asr::asr_set_settings,
+            api::asr::asr_get_status,
+            api::asr::asr_test_provider,
+            api::asr::asr_start_streaming,
+            api::asr::asr_stream_audio_chunk,
+            api::asr::asr_stop_streaming,
+            api::asr::asr_cancel_streaming,
             exit_app,
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running tauri application");
 }
 

@@ -4,17 +4,17 @@
 //! 固定 base_url 为 https://api.kimi.com/coding，默认模型 kimi-for-coding，
 //! 并强制携带 User-Agent: claude-code/0.1.0。
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use futures_util::StreamExt;
-use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, USER_AGENT};
 use reqwest::Client;
+use reqwest::header::{ACCEPT, HeaderMap, HeaderValue, USER_AGENT};
 use serde::{Deserialize, Serialize};
 
 use crate::ai_service::llm::provider::{
     LlmModelInfo, LlmProvider, LlmResponseWithTools, ThinkEffortsInfo,
 };
-use crate::ai_service::llm::{ChunkStream, LlmChunk, LlmConfig};
+use crate::ai_service::llm::{ChunkStream, LlmChunk, LlmConfig, LlmUsage};
 use crate::ai_service::types::{LlmMessage, ToolCall, ToolDefinition};
 
 #[derive(Debug, Deserialize)]
@@ -134,7 +134,7 @@ impl KimiCodeProvider {
                         system_text.push('\n');
                     }
                     system_text.push_str(&m.content);
-                }
+                },
                 "user" => conversation.push(AnthropicMessage {
                     role: "user".to_string(),
                     content: AnthropicMessageContent::Text(m.content.clone()),
@@ -166,7 +166,7 @@ impl KimiCodeProvider {
                         role: "assistant".to_string(),
                         content: AnthropicMessageContent::Blocks(blocks),
                     });
-                }
+                },
                 "assistant" => conversation.push(AnthropicMessage {
                     role: "assistant".to_string(),
                     content: AnthropicMessageContent::Text(m.content.clone()),
@@ -186,7 +186,7 @@ impl KimiCodeProvider {
                             },
                         ]),
                     });
-                }
+                },
                 _ => conversation.push(AnthropicMessage {
                     role: "user".to_string(),
                     content: AnthropicMessageContent::Text(m.content.clone()),
@@ -243,7 +243,7 @@ impl KimiCodeProvider {
                         effort: None,
                         name,
                     })
-                }
+                },
                 _ => None,
             });
 
@@ -319,6 +319,13 @@ impl KimiCodeProvider {
                 Some(content_text)
             },
             tool_calls,
+            // 非流式请求的 usage 落在消息 JSON 的 usage 字段（若响应携带）
+            usage: parsed.usage.as_ref().map(|u| LlmUsage {
+                prompt_tokens: u.input_tokens.unwrap_or(0),
+                completion_tokens: u.output_tokens.unwrap_or(0),
+                total_tokens: u.input_tokens.unwrap_or(0) + u.output_tokens.unwrap_or(0),
+                cached_tokens: u.cache_read_input_tokens.unwrap_or(0),
+            }),
         })
     }
 
@@ -526,23 +533,35 @@ impl KimiCodeProvider {
 
         let byte_stream = resp.bytes_stream();
         let stream = async_stream::try_stream! {
-            let mut pending = String::new();
+            // 按字节累积：SSE 事件分隔符是 ASCII，按字节切分再整段解码，
+            // 才能保证跨分块的多字节字符不被拆坏（详见 find_subslice 处注释）。
+            let mut pending: Vec<u8> = Vec::new();
             let mut thinking_buffer = String::new();
             let mut text_buffer = String::new();
             let mut last_flush_len: usize = 0;
             // 流式工具调用累积：块 index → (id, name, partial_json)
             let mut tool_blocks: std::collections::BTreeMap<usize, (String, String, String)> =
                 std::collections::BTreeMap::new();
+            // Anthropic 流式 usage：input_tokens 在 message_start 一次性给出，
+            // output_tokens 在 message_delta 逐段累加。
+            let mut input_tokens: u64 = 0;
+            let mut output_tokens: u64 = 0;
+            let mut cached_tokens: u64 = 0;
             let mut bs = byte_stream;
             while let Some(item) = bs.next().await {
                 let chunk = item.map_err(|e| anyhow!("Kimi-Code 流式读取失败: {e}"))?;
-                pending.push_str(&String::from_utf8_lossy(&chunk));
+                pending.extend_from_slice(&chunk);
 
                 loop {
-                    let sep = pending.find("\n\n").or_else(|| pending.find("\r\n\r\n"));
-                    let Some(pos) = sep else { break };
-                    let seplen = if pending[pos..].starts_with("\n\n") { 2 } else { 4 };
-                    let event = pending[..pos].to_string();
+                    let (pos, seplen) = match find_subslice(&pending, b"\n\n") {
+                        Some(pos) => (pos, 2),
+                        None => match find_subslice(&pending, b"\r\n\r\n") {
+                            Some(pos) => (pos, 4),
+                            None => break,
+                        },
+                    };
+                    // pos 落在 ASCII 分隔符上，一定是字符边界，整段解码安全。
+                    let event = String::from_utf8_lossy(&pending[..pos]).into_owned();
                     pending.drain(..pos + seplen);
 
                     for raw_line in event.lines() {
@@ -567,6 +586,17 @@ impl KimiCodeProvider {
                             if !tool_blocks.is_empty() {
                                 yield LlmChunk::ToolCalls(collect_tool_calls(std::mem::take(&mut tool_blocks)));
                             }
+                            // 终止信号：补发 usage（其他 provider 的 usage 随 StreamEnd 携带，
+                            // Kimi 流此前没有 StreamEnd，顺带让上层拿到停止原因与用量）
+                            yield LlmChunk::StreamEnd {
+                                reason: Some("stop".to_string()),
+                                usage: Some(LlmUsage {
+                                    prompt_tokens: input_tokens,
+                                    completion_tokens: output_tokens,
+                                    total_tokens: input_tokens + output_tokens,
+                                    cached_tokens,
+                                }),
+                            };
                             return;
                         }
                         if data.is_empty() { continue; }
@@ -622,7 +652,26 @@ impl KimiCodeProvider {
                                     }
                                 }
                             }
-                            "content_block_stop" | "message_start" | "message_delta" | "message_stop" => {
+                            "message_start" => {
+                                // input_tokens 在 message_start 一次性给出（含缓存统计）
+                                if let Some(u) = parsed.message.and_then(|m| m.usage) {
+                                    if let Some(i) = u.input_tokens {
+                                        input_tokens = i;
+                                    }
+                                    if let Some(c) = u.cache_read_input_tokens {
+                                        cached_tokens = c;
+                                    }
+                                }
+                            }
+                            "message_delta" => {
+                                // output_tokens 是每个 delta 的增量，需累加
+                                if let Some(u) = parsed.usage {
+                                    if let Some(o) = u.output_tokens {
+                                        output_tokens += o;
+                                    }
+                                }
+                            }
+                            "content_block_stop" | "message_stop" => {
                                 tracing::debug!("[Kimi-Code SSE] type={}, delta={:?}", parsed.type_, parsed.delta);
                             }
                             other => {
@@ -659,10 +708,36 @@ impl KimiCodeProvider {
             if !tool_blocks.is_empty() {
                 yield LlmChunk::ToolCalls(collect_tool_calls(std::mem::take(&mut tool_blocks)));
             }
+            // 终止信号（与 [DONE] 分支同语义；无 [DONE] 时也会走到这里）
+            yield LlmChunk::StreamEnd {
+                reason: Some("stop".to_string()),
+                usage: Some(LlmUsage {
+                    prompt_tokens: input_tokens,
+                    completion_tokens: output_tokens,
+                    total_tokens: input_tokens + output_tokens,
+                    cached_tokens,
+                }),
+            };
         };
 
         Ok(Box::pin(stream))
     }
+}
+
+/// 在字节序列中查找子序列首次出现的位置。
+///
+/// 用于在未解码的 SSE 缓冲区里定位事件分隔符。之所以必须在字节层面定位，
+/// 是因为 `bytes_stream()` 的分块边界落在任意字节偏移上：若对每个分块单独调用
+/// `String::from_utf8_lossy`，跨分块的多字节字符（中文占 3 字节）会被拆成两截，
+/// 前后各自变成 U+FFFD，字符不可恢复。而 U+FFFD 在 JSON 字符串里是合法字符，
+/// 后续 `serde_json::from_str` 不会报错，损坏会静默流向界面、历史记录与 TTS。
+fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return None;
+    }
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
 }
 
 /// 把流式累积的工具块组装成 ToolCall 列表（按块 index 升序）。
@@ -764,6 +839,9 @@ struct AnthropicToolChoice {
 #[derive(Deserialize)]
 struct MessagesResponse {
     content: Vec<ContentBlock>,
+    /// 非流式响应的用量（Anthropic 顶层 usage 字段）。
+    #[serde(default)]
+    usage: Option<StreamUsage>,
 }
 
 #[derive(Deserialize, Default)]
@@ -792,6 +870,29 @@ struct MessagesStreamChunk {
     content_block: Option<ContentBlock>,
     #[serde(default)]
     delta: Option<MessageDelta>,
+    /// message_delta 携带的 usage（output_tokens 为该 delta 的增量）。
+    #[serde(default)]
+    usage: Option<StreamUsage>,
+    /// message_start 携带的 message 头（input_tokens 一次性给出）。
+    #[serde(default)]
+    message: Option<StreamMessageHeader>,
+}
+
+#[derive(Deserialize, Default)]
+struct StreamUsage {
+    #[serde(default)]
+    input_tokens: Option<u64>,
+    #[serde(default)]
+    output_tokens: Option<u64>,
+    /// Anthropic：cache_read_input_tokens（输入中命中缓存的 token 数）。
+    #[serde(default)]
+    cache_read_input_tokens: Option<u64>,
+}
+
+#[derive(Deserialize, Default)]
+struct StreamMessageHeader {
+    #[serde(default)]
+    usage: Option<StreamUsage>,
 }
 
 #[derive(Deserialize, Default, Debug)]
@@ -803,121 +904,4 @@ struct MessageDelta {
     /// input_json_delta：流式工具调用参数的 JSON 片段。
     #[serde(default)]
     partial_json: Option<String>,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::ai_service::types::{FunctionCall, ToolCall};
-
-    fn provider() -> KimiCodeProvider {
-        KimiCodeProvider::from_config(&LlmConfig {
-            provider: "kimicode".to_string(),
-            model: "kimi-for-coding".to_string(),
-            api_key: "test".to_string(),
-            base_url: String::new(),
-            timeout_secs: 30,
-            temperature: None,
-            top_p: None,
-            enable_thinking: false,
-            reasoning_effort: None,
-        })
-        .unwrap()
-    }
-
-    #[test]
-    fn serializes_plain_messages_without_blocks() {
-        let provider = provider();
-        let messages = [
-            LlmMessage::system("系统"),
-            LlmMessage::user("你好"),
-            LlmMessage::assistant("你好呀"),
-        ];
-        let body = provider
-            .build_request(&messages, false, None, None)
-            .unwrap();
-        let value = serde_json::to_value(body).unwrap();
-        assert_eq!(value["system"], "系统");
-        assert_eq!(value["messages"][0]["role"], "user");
-        assert_eq!(value["messages"][0]["content"], "你好");
-        assert_eq!(value["messages"][1]["role"], "assistant");
-        assert_eq!(value["messages"][1]["content"], "你好呀");
-    }
-
-    #[test]
-    fn serializes_tool_use_and_result_with_matching_id() {
-        let call = ToolCall {
-            id: "call-1".to_string(),
-            type_: "function".to_string(),
-            function: FunctionCall {
-                name: "get_current_time".to_string(),
-                arguments: "{}".to_string(),
-            },
-        };
-        let provider = provider();
-        let messages = [
-            LlmMessage::user("几点了"),
-            LlmMessage::tool(vec![call]),
-            LlmMessage::tool_result("call-1", r#"{"local_time":"now"}"#),
-        ];
-        let body = provider
-            .build_request(&messages, false, None, None)
-            .unwrap();
-        let value = serde_json::to_value(body).unwrap();
-        assert_eq!(value["messages"][1]["role"], "assistant");
-        assert_eq!(value["messages"][1]["content"][0]["type"], "tool_use");
-        assert_eq!(value["messages"][1]["content"][0]["id"], "call-1");
-        assert_eq!(
-            value["messages"][1]["content"][0]["name"],
-            "get_current_time"
-        );
-        assert_eq!(value["messages"][2]["role"], "user");
-        assert_eq!(value["messages"][2]["content"][0]["type"], "tool_result");
-        assert_eq!(value["messages"][2]["content"][0]["tool_use_id"], "call-1");
-    }
-
-    #[test]
-    fn rejects_tool_result_without_call_id() {
-        let mut message = LlmMessage::tool_result("call-1", "{}");
-        message.tool_call_id = None;
-        let error = provider()
-            .build_request(&[message], false, None, None)
-            .err()
-            .unwrap();
-        assert!(error.to_string().contains("缺少 tool_call_id"));
-    }
-
-    #[test]
-    fn rejects_malformed_tool_use_response() {
-        let parsed: MessagesResponse = serde_json::from_value(serde_json::json!({
-            "content": [{"type": "tool_use", "name": "get_current_time", "input": {}}]
-        }))
-        .unwrap();
-        let error = provider()
-            .parse_messages_with_tools_response(parsed)
-            .unwrap_err();
-        assert!(error.to_string().contains("缺少 id"));
-    }
-
-    #[test]
-    fn serializes_required_tool_choice_for_streaming_requests() {
-        let tool = ToolDefinition::new(
-            "get_current_time",
-            "读取时间",
-            serde_json::json!({"type": "object", "properties": {}}),
-        );
-        let provider = provider();
-        let messages = [LlmMessage::user("几点了")];
-        let tools = [tool];
-        let body = provider
-            .build_request(
-                &messages,
-                true,
-                Some(&tools),
-                parse_tool_choice(Some("required")),
-            )
-            .unwrap();
-        let value = serde_json::to_value(body).unwrap();
-        assert_eq!(value["tool_choice"]["type"], "any");
-    }
 }

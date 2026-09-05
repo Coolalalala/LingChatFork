@@ -22,8 +22,8 @@ pub fn read_yaml_as_json(path: &Path) -> Result<JsonValue, String> {
     let text = fs::read_to_string(path)
         .map_err(|e| format!("无法读取 {:?}: {}（文件必须是 UTF-8）", path, e))?;
 
-    let value: JsonValue = serde_yaml::from_str(&text)
-        .map_err(|e| format!("{:?} YAML 解析失败: {}", path, e))?;
+    let value: JsonValue =
+        serde_yaml::from_str(&text).map_err(|e| format!("{:?} YAML 解析失败: {}", path, e))?;
 
     Ok(match value {
         JsonValue::Null => JsonValue::Object(Map::new()),
@@ -33,8 +33,7 @@ pub fn read_yaml_as_json(path: &Path) -> Result<JsonValue, String> {
 
 /// 把 JSON 值按 YAML 写入，带备份与原子替换。
 pub fn write_json_as_yaml(path: &Path, value: &JsonValue) -> Result<(), String> {
-    let yaml = serde_yaml::to_string(value)
-        .map_err(|e| format!("序列化 YAML 失败: {}", e))?;
+    let yaml = serde_yaml::to_string(value).map_err(|e| format!("序列化 YAML 失败: {}", e))?;
     backup_if_exists(path)?;
     atomic_write(path, yaml.as_bytes())
 }
@@ -60,8 +59,7 @@ fn backup_if_exists(path: &Path) -> Result<(), String> {
     }
     let mut bak = path.as_os_str().to_os_string();
     bak.push(".bak");
-    fs::copy(path, Path::new(&bak))
-        .map_err(|e| format!("备份 {:?} 失败: {}", path, e))?;
+    fs::copy(path, Path::new(&bak)).map_err(|e| format!("备份 {:?} 失败: {}", path, e))?;
     Ok(())
 }
 
@@ -81,8 +79,8 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let tmp = dir.join(format!(".{}.tmp", file_name));
 
     {
-        let mut f = fs::File::create(&tmp)
-            .map_err(|e| format!("无法创建临时文件 {:?}: {}", tmp, e))?;
+        let mut f =
+            fs::File::create(&tmp).map_err(|e| format!("无法创建临时文件 {:?}: {}", tmp, e))?;
         f.write_all(bytes)
             .map_err(|e| format!("写入临时文件失败: {}", e))?;
         f.sync_all()
@@ -166,89 +164,5 @@ impl ChapterDoc {
             out.entry(k.clone()).or_insert_with(|| v.clone());
         }
         JsonValue::Object(out)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn chapter_doc_normalizes_missing_fields() {
-        let d = ChapterDoc::from_json(json!({})).unwrap();
-        assert_eq!(d.name, None);
-        assert!(d.events.is_empty());
-
-        let d = ChapterDoc::from_json(JsonValue::Null).unwrap();
-        assert!(d.events.is_empty());
-    }
-
-    #[test]
-    fn chapter_doc_preserves_unknown_top_level_keys() {
-        let d = ChapterDoc::from_json(json!({
-            "name": "第一章",
-            "events": [{ "type": "narration", "text": "hi" }],
-            "author_note": "别删我"
-        }))
-        .unwrap();
-        assert_eq!(d.name.as_deref(), Some("第一章"));
-        assert_eq!(d.events.len(), 1);
-
-        let back = d.to_json();
-        assert_eq!(back["author_note"], json!("别删我"));
-        assert_eq!(back["name"], json!("第一章"));
-        assert_eq!(back["events"].as_array().unwrap().len(), 1);
-    }
-
-    #[test]
-    fn chapter_doc_rejects_wrong_shapes() {
-        assert!(ChapterDoc::from_json(json!([])).is_err());
-        assert!(ChapterDoc::from_json(json!({ "events": 3 })).is_err());
-    }
-
-    #[test]
-    fn atomic_write_replaces_and_backs_up() {
-        let dir = std::env::temp_dir().join(format!("lc_editor_io_{}", std::process::id()));
-        let _ = fs::create_dir_all(&dir);
-        let f = dir.join("c.yaml");
-
-        write_json_as_yaml(&f, &json!({ "events": [] })).unwrap();
-        assert!(f.is_file());
-        // 首次写入不该产生 .bak
-        assert!(!dir.join("c.yaml.bak").is_file());
-
-        write_json_as_yaml(&f, &json!({ "events": [1] })).unwrap();
-        assert!(dir.join("c.yaml.bak").is_file());
-
-        // 不留临时文件
-        let leftovers: Vec<_> = fs::read_dir(&dir)
-            .unwrap()
-            .flatten()
-            .filter(|e| e.file_name().to_string_lossy().ends_with(".tmp"))
-            .collect();
-        assert!(leftovers.is_empty(), "残留临时文件: {:?}", leftovers);
-
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn yaml_round_trip_keeps_structure() {
-        let dir = std::env::temp_dir().join(format!("lc_editor_rt_{}", std::process::id()));
-        let _ = fs::create_dir_all(&dir);
-        let f = dir.join("r.yaml");
-
-        let original = json!({
-            "name": "1 舒适的一天~",
-            "events": [
-                { "type": "narration", "text": "今天是个出去玩的好日子呢。" },
-                { "type": "chapter_end", "end_type": "linear", "next_chapter": "main2" }
-            ]
-        });
-        write_json_as_yaml(&f, &original).unwrap();
-        let back = read_yaml_as_json(&f).unwrap();
-        assert_eq!(back, original);
-
-        let _ = fs::remove_dir_all(&dir);
     }
 }

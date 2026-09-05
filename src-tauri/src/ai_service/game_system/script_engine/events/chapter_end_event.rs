@@ -7,12 +7,12 @@
 
 use std::sync::Arc;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use serde_json::Value;
 
 use crate::ai_service::game_system::script_engine::events::{
-    evaluate_condition, parse_duration, register_event, ScriptContext, ScriptEvent,
+    ScriptContext, ScriptEvent, evaluate_condition, register_event,
 };
 use crate::ai_service::game_system::script_engine::utils::script_function::match_ai_response_options;
 use crate::ai_service::llm::LlmClient;
@@ -24,7 +24,6 @@ pub struct ChapterEndEvent {
     next_chapter: Option<String>,
     options: Vec<Value>,
     prompt: Option<String>,
-    duration: Option<f64>,
 }
 
 impl ChapterEndEvent {
@@ -52,7 +51,6 @@ impl ChapterEndEvent {
                 .get("prompt")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string()),
-            duration: parse_duration(data),
         }
     }
 }
@@ -102,7 +100,7 @@ impl ScriptEvent for ChapterEndEvent {
                     }
                 }
                 result
-            }
+            },
             "ai_judged" => {
                 // AI 判断走向：必须调 LLM。LLM 不可用就终止剧本，不再回落到任何
                 // 默认分支——那会让剧本以错误逻辑继续跑（上游复核明确要求）。
@@ -112,14 +110,14 @@ impl ScriptEvent for ChapterEndEvent {
                     )
                 })?;
                 self.call_llm_for_judgment(&llm, ctx).await?
-            }
+            },
             _ => {
                 tracing::warn!(
                     "[ChapterEndEvent] 未知的 end_type: '{}'，默认 end",
                     self.end_type
                 );
                 "end".to_string()
-            }
+            },
         };
 
         tracing::info!(
@@ -132,10 +130,6 @@ impl ScriptEvent for ChapterEndEvent {
 
     fn event_type() -> &'static str {
         "chapter_end"
-    }
-
-    fn duration(&self) -> Option<f64> {
-        self.duration
     }
 }
 

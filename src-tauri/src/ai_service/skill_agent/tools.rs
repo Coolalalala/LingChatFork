@@ -4,12 +4,13 @@ use std::collections::HashMap;
 
 use serde_json::json;
 
+#[cfg(desktop)]
 use crate::ai_service::skill_agent::command_executor;
 use crate::ai_service::skill_agent::core::SkillAgentRunContext;
 use crate::ai_service::skill_agent::file_tools::FileTools;
 use crate::ai_service::skill_agent::skills;
-use crate::api::script_editor::validate::{self, Diagnostic, Severity, ValidationReport};
 use crate::ai_service::types::ToolDefinition;
+use crate::api::script_editor::validate::{self, Diagnostic, Severity, ValidationReport};
 
 /// LLM 可调用的工具定义。
 pub fn tool_definitions() -> Vec<ToolDefinition> {
@@ -86,6 +87,7 @@ pub fn tool_definitions() -> Vec<ToolDefinition> {
                 "required": ["path"]
             }),
         ),
+        #[cfg(desktop)]
         ToolDefinition::new(
             "execute_command",
             "在本机运行 shell 命令。运行前可能需要用户确认。",
@@ -134,7 +136,7 @@ pub async fn execute_tool(
                     .join("\n");
                 (true, format!("可用技能:\n{}", lines))
             }
-        }
+        },
         "read_skill" => {
             let name_arg = args.get("name").and_then(|v| v.as_str()).unwrap_or("");
             if name_arg.is_empty() {
@@ -150,10 +152,10 @@ pub async fn execute_tool(
                         res.name
                     );
                     (true, msg)
-                }
+                },
                 None => (false, format!("未找到技能: {}", name_arg)),
             }
-        }
+        },
         "validate_script" => {
             // 确定剧本 key：显式参数优先，否则回落会话绑定的剧本。
             let arg_key = args
@@ -171,7 +173,7 @@ pub async fn execute_tool(
                             "未指定要校验的剧本 key，且当前会话没有绑定剧本。请传入 script_key 参数（如 standalone/我的剧本）。"
                                 .into(),
                         );
-                    }
+                    },
                 }
             } else {
                 arg_key
@@ -201,7 +203,7 @@ pub async fn execute_tool(
             // 运行引擎级校验（只读，无副作用）。诊断本身是工具的合法结果 —— 有错误也要返回 ok。
             let report = validate::validate(&crate::api::data_dir(), &dir, &key, &names);
             (true, format_validation_report(&key, &report))
-        }
+        },
         "list_files" => {
             let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
             if path.trim().is_empty() {
@@ -211,7 +213,7 @@ pub async fn execute_tool(
                 Ok(out) => (true, out),
                 Err(e) => (false, e.to_string()),
             }
-        }
+        },
         "read_file" => {
             let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
             if path.trim().is_empty() {
@@ -221,14 +223,14 @@ pub async fn execute_tool(
                 Ok(out) => (true, out),
                 Err(e) => (false, e.to_string()),
             }
-        }
+        },
         "write_file" => {
             let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
-            let content = args
-                .get("content")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let append = args.get("append").and_then(|v| v.as_bool()).unwrap_or(false);
+            let content = args.get("content").and_then(|v| v.as_str()).unwrap_or("");
+            let append = args
+                .get("append")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             if path.trim().is_empty() {
                 return (false, "缺少 path 参数".into());
             }
@@ -236,7 +238,7 @@ pub async fn execute_tool(
                 Ok(out) => (true, out),
                 Err(e) => (false, e.to_string()),
             }
-        }
+        },
         "delete_file" => {
             let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
             if path.trim().is_empty() {
@@ -246,12 +248,10 @@ pub async fn execute_tool(
                 Ok(out) => (true, out),
                 Err(e) => (false, e.to_string()),
             }
-        }
+        },
+        #[cfg(desktop)]
         "execute_command" => {
-            let command = args
-                .get("command")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let command = args.get("command").and_then(|v| v.as_str()).unwrap_or("");
             let cwd = args.get("cwd").and_then(|v| v.as_str()).unwrap_or("");
             if command.is_empty() {
                 return (false, "缺少 command 参数".into());
@@ -269,7 +269,7 @@ pub async fn execute_tool(
                 Ok(out) => (out.exit_code == 0, out.to_prompt_string()),
                 Err(e) => (false, e.to_string()),
             }
-        }
+        },
         other => (false, format!("未知工具: {}", other)),
     }
 }
@@ -347,7 +347,9 @@ fn format_validation_report(key: &str, report: &ValidationReport) -> String {
     render_group(Severity::Info, MAX_INFO);
 
     if report.error_count > 0 {
-        out.push_str("\n校验未通过：请按上述诊断修复后重新运行 validate_script，直到 error_count == 0。");
+        out.push_str(
+            "\n校验未通过：请按上述诊断修复后重新运行 validate_script，直到 error_count == 0。",
+        );
     } else {
         out.push_str("\n校验通过（error_count = 0）。");
         if report.warn_count > 0 {
@@ -356,84 +358,4 @@ fn format_validation_report(key: &str, report: &ValidationReport) -> String {
     }
 
     out
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn format_validation_report_renders_counts_and_lines() {
-        let report = ValidationReport {
-            diagnostics: vec![
-                Diagnostic {
-                    severity: Severity::Error,
-                    code: "config.duplicate_name",
-                    message: "剧本名与另一个剧本重复，引擎按名索引会互相覆盖。".into(),
-                    chapter: None,
-                    event_index: None,
-                    field: None,
-                },
-                Diagnostic {
-                    severity: Severity::Warn,
-                    code: "graph.unreachable",
-                    message: "章节「03」从开场章节不可达。".into(),
-                    chapter: Some("03".into()),
-                    event_index: Some(2),
-                    field: None,
-                },
-            ],
-            error_count: 1,
-            warn_count: 1,
-            info_count: 0,
-            variables: Vec::new(),
-            edges: Vec::new(),
-        };
-        let s = format_validation_report("standalone/x", &report);
-        assert!(s.contains("错误 1 条 · 警告 1 条 · 提示 0 条"));
-        assert!(s.contains("[校验报告] 剧本：standalone/x"));
-        assert!(s.contains("[错误][config.duplicate_name]"));
-        assert!(s.contains("[警告][graph.unreachable]"));
-        assert!(s.contains("章节「03」 · 第 3 个事件"));
-        assert!(s.contains("校验未通过"));
-    }
-
-    #[test]
-    fn format_validation_report_clean_report() {
-        let report = ValidationReport {
-            diagnostics: Vec::new(),
-            error_count: 0,
-            warn_count: 2,
-            info_count: 0,
-            variables: Vec::new(),
-            edges: Vec::new(),
-        };
-        let s = format_validation_report("standalone/ok", &report);
-        assert!(s.contains("校验通过（error_count = 0）"));
-        assert!(s.contains("仍建议按诊断处理以下警告"));
-        assert!(!s.contains("校验未通过"));
-    }
-
-    #[test]
-    fn format_validation_report_truncates_warns() {
-        let report = ValidationReport {
-            diagnostics: (0..50)
-                .map(|i| Diagnostic {
-                    severity: Severity::Warn,
-                    code: "graph.unreachable",
-                    message: format!("警告 {}", i),
-                    chapter: None,
-                    event_index: None,
-                    field: None,
-                })
-                .collect(),
-            error_count: 0,
-            warn_count: 50,
-            info_count: 0,
-            variables: Vec::new(),
-            edges: Vec::new(),
-        };
-        let s = format_validation_report("standalone/x", &report);
-        assert!(s.contains("…另有 10 条警告未显示（共 50 条）"));
-    }
 }

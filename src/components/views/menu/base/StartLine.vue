@@ -1,8 +1,7 @@
 <template>
   <div
     :class="{
-      [`hidden
-      sm:block`]: mobile === false,
+      'hidden sm:block': mobile === false,
     }"
     v-bind="$attrs"
   >
@@ -11,11 +10,13 @@
 </template>
 
 <script setup lang="ts">
-interface Props {
-  mobile?: boolean
-}
+  defineOptions({ inheritAttrs: false });
 
-withDefaults(defineProps<Props>(), {
-  mobile: true,
-})
+  interface Props {
+    mobile?: boolean;
+  }
+
+  withDefaults(defineProps<Props>(), {
+    mobile: true,
+  });
 </script>

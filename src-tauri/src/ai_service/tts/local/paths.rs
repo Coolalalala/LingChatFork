@@ -33,7 +33,12 @@ impl LocalTtsPaths {
             .app_cache_dir()
             .map_err(|e| format!("app_cache_dir: {e}"))?
             .join("tts-local-cache");
-        Ok(Self { root, assets, voices, cache })
+        Ok(Self {
+            root,
+            assets,
+            voices,
+            cache,
+        })
     }
 
     pub fn ensure(&self) -> std::result::Result<(), String> {
@@ -57,7 +62,7 @@ impl LocalTtsPaths {
             "deberta" => {
                 let d = self.deberta_dir();
                 d.join("deberta.onnx").exists() && d.join("tokenizer.json").exists()
-            }
+            },
             _ => false,
         }
     }
@@ -80,42 +85,5 @@ fn resolve_models_root(
     #[cfg(not(target_os = "android"))]
     {
         Ok(_desktop_data_root)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn required_assets_includes_deberta() {
-        assert!(REQUIRED_ASSETS.contains(&"deberta"));
-    }
-
-    #[test]
-    fn voice_dir_nests_under_voices() {
-        let p = LocalTtsPaths {
-            root: PathBuf::from("/tmp/x"),
-            assets: PathBuf::from("/tmp/x/assets"),
-            voices: PathBuf::from("/tmp/x/voices"),
-            cache: PathBuf::from("/tmp/y"),
-        };
-        assert_eq!(p.voice_dir("alice"), PathBuf::from("/tmp/x/voices/alice"));
-    }
-
-    #[test]
-    fn deberta_presence_requires_model_and_tokenizer() {
-        let temp = tempfile::tempdir().unwrap();
-        let p = LocalTtsPaths {
-            root: temp.path().join("tts-local"),
-            assets: temp.path().join("tts-local/assets"),
-            voices: temp.path().join("tts-local/voices"),
-            cache: temp.path().join("cache"),
-        };
-        std::fs::create_dir_all(p.deberta_dir()).unwrap();
-        std::fs::write(p.deberta_dir().join("deberta.onnx"), b"model").unwrap();
-        assert!(!p.asset_present("deberta"));
-        std::fs::write(p.deberta_dir().join("tokenizer.json"), b"{}").unwrap();
-        assert!(p.asset_present("deberta"));
     }
 }

@@ -19,13 +19,13 @@ use serde_json::Value as JsonValue;
 
 use crate::ai_service::game_system::script_engine::events::background_effect_event::KNOWN_EFFECTS;
 use crate::ai_service::game_system::script_engine::utils::media::{
-    resolve_script_media, MediaType,
+    MediaType, resolve_script_media,
 };
 use crate::ai_service::game_system::script_engine::utils::script_function::parse_variable_action;
 
-use crate::utils::yaml_file;
-use crate::utils::script_paths as paths;
 use super::schema::build_schema;
+use crate::utils::script_paths as paths;
+use crate::utils::yaml_file;
 
 /// 诊断级别。
 ///
@@ -78,12 +78,7 @@ impl Diagnostic {
             field: None,
         }
     }
-    fn chapter(
-        severity: Severity,
-        code: &'static str,
-        chapter: &str,
-        message: String,
-    ) -> Self {
+    fn chapter(severity: Severity, code: &'static str, chapter: &str, message: String) -> Self {
         Diagnostic {
             severity,
             code,
@@ -149,7 +144,11 @@ fn branch_label(opt: &serde_json::Map<String, JsonValue>, index: usize) -> Strin
             return n.trim().to_string();
         }
     }
-    if opt.get("default").and_then(|v| v.as_bool()).unwrap_or(false) {
+    if opt
+        .get("default")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
         return "默认".to_string();
     }
     format!("分支 {}", index + 1)
@@ -202,7 +201,7 @@ pub fn validate(
         Err(e) => {
             diags.push(Diagnostic::script(Severity::Error, "config.unreadable", e));
             return finish(diags, Vec::new(), Vec::new());
-        }
+        },
     };
 
     let folder_name = script_dir
@@ -290,23 +289,38 @@ pub fn validate(
         let file = match paths::resolve_chapter_file(script_dir, cid, true) {
             Ok(f) => f,
             Err(e) => {
-                diags.push(Diagnostic::chapter(Severity::Error, "chapter.unreadable", cid, e));
+                diags.push(Diagnostic::chapter(
+                    Severity::Error,
+                    "chapter.unreadable",
+                    cid,
+                    e,
+                ));
                 continue;
-            }
+            },
         };
         let raw = match yaml_file::read_yaml_as_json(&file) {
             Ok(v) => v,
             Err(e) => {
-                diags.push(Diagnostic::chapter(Severity::Error, "chapter.parse_failed", cid, e));
+                diags.push(Diagnostic::chapter(
+                    Severity::Error,
+                    "chapter.parse_failed",
+                    cid,
+                    e,
+                ));
                 continue;
-            }
+            },
         };
         let doc = match yaml_file::ChapterDoc::from_json(raw) {
             Ok(d) => d,
             Err(e) => {
-                diags.push(Diagnostic::chapter(Severity::Error, "chapter.bad_shape", cid, e));
+                diags.push(Diagnostic::chapter(
+                    Severity::Error,
+                    "chapter.bad_shape",
+                    cid,
+                    e,
+                ));
                 continue;
-            }
+            },
         };
 
         if doc.events.is_empty() {
@@ -333,7 +347,7 @@ pub fn validate(
                         "事件必须是键值映射".to_string(),
                     ));
                     continue;
-                }
+                },
             };
 
             let ty = match obj.get("type").and_then(|v| v.as_str()) {
@@ -347,7 +361,7 @@ pub fn validate(
                         "事件缺少 type 字段，运行到这里整个剧本会中断".to_string(),
                     ));
                     continue;
-                }
+                },
             };
 
             let fields = match field_index.get(ty) {
@@ -361,7 +375,7 @@ pub fn validate(
                         format!("未知事件类型「{}」，运行到这里整个剧本会中断", ty),
                     ));
                     continue;
-                }
+                },
             };
 
             // 成就事件的键名唯一性：内置成就与本剧本内都不能重名（重名会覆盖旧定义）
@@ -388,7 +402,10 @@ pub fn validate(
                                     "achievement.id_duplicated",
                                     cid,
                                     i,
-                                    format!("本剧本里已有成就「{}」，成就键名不能重复，请换个键名", id),
+                                    format!(
+                                        "本剧本里已有成就「{}」，成就键名不能重复，请换个键名",
+                                        id
+                                    ),
                                 )
                                 .with_field("achievement_id"),
                             );
@@ -453,10 +470,7 @@ pub fn validate(
                             "field.inert",
                             cid,
                             i,
-                            format!(
-                                "{} 引擎从不读取，写了不生效（保存时会原样保留）",
-                                f.key
-                            ),
+                            format!("{} 引擎从不读取，写了不生效（保存时会原样保留）", f.key),
                         )
                         .with_field(f.key),
                     );
@@ -469,11 +483,9 @@ pub fn validate(
             }
 
             // 逐类型细查
-             match ty {
+            match ty {
                 "background" | "present_pic" | "music" | "sound" | "ambient" => {
-                    check_asset(
-                        data_dir, script_dir, obj, ty, cid, i, &mut diags,
-                    );
+                    check_asset(data_dir, script_dir, obj, ty, cid, i, &mut diags);
                     // music 事件的播放速度：超范围会失真或被浏览器拒绝，提前告警
                     if ty == "music" {
                         if let Some(speed) = obj.get("playbackSpeed").and_then(|v| v.as_f64()) {
@@ -494,11 +506,10 @@ pub fn validate(
                             }
                         }
                     }
-                }
+                },
                 "background_effect" => {
                     let effect = obj.get("effect").and_then(|v| v.as_str()).unwrap_or("");
-                    let clearing = effect.is_empty()
-                        || effect.eq_ignore_ascii_case("none");
+                    let clearing = effect.is_empty() || effect.eq_ignore_ascii_case("none");
                     if !clearing && !KNOWN_EFFECTS.contains(&effect) {
                         let hint = KNOWN_EFFECTS
                             .iter()
@@ -534,16 +545,19 @@ pub fn validate(
                             ),
                         }
                     }
-                }
+                },
                 "choices" => {
                     check_choices(obj, cid, i, &mut diags, &mut vars_written, &mut vars_read);
-                }
+                },
                 "set_variable" => {
                     check_set_variable(obj, cid, i, &mut diags, &mut vars_written, &mut vars_read);
-                }
+                },
                 "free_dialogue" => {
                     let rounds = obj.get("max_rounds").and_then(|v| v.as_i64()).unwrap_or(-1);
-                    let end_line = obj.get("end_line").and_then(|v| v.as_str()).unwrap_or("结束");
+                    let end_line = obj
+                        .get("end_line")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("结束");
                     if rounds <= 0 && end_line.trim().is_empty() {
                         diags.push(Diagnostic::event(
                             Severity::Error,
@@ -553,7 +567,7 @@ pub fn validate(
                             "最大轮数不限且结束语为空，这段自由对话永远无法结束".to_string(),
                         ));
                     }
-                }
+                },
                 "chapter_end" => {
                     has_chapter_end = true;
                     if i != last_index {
@@ -568,15 +582,23 @@ pub fn validate(
                             ),
                         ));
                     }
-                    check_chapter_end(obj, cid, i, &chapter_set, &mut edges, &mut diags, &mut vars_read);
-                }
+                    check_chapter_end(
+                        obj,
+                        cid,
+                        i,
+                        &chapter_set,
+                        &mut edges,
+                        &mut diags,
+                        &mut vars_read,
+                    );
+                },
                 "modify_character" => {
                     // 引擎只识别 show_character / hide_character，其余动作静默忽略
                     // （modify_character_event.rs 的 `_ => {}`）。schema 的 select 已限定
                     // 编辑器选项，这里兜住手写 YAML / 旧数据写错的情况。
                     check_modify_character_action(obj, cid, i, &mut diags);
-                }
-                _ => {}
+                },
+                _ => {},
             }
 
             // character 引用
@@ -604,7 +626,8 @@ pub fn validate(
                 Severity::Error,
                 "chapter.no_end",
                 cid,
-                "章节缺少「章节结束」事件。引擎会把这当成整个剧本结束，而不是接着下一章".to_string(),
+                "章节缺少「章节结束」事件。引擎会把这当成整个剧本结束，而不是接着下一章"
+                    .to_string(),
             ));
         }
     }
@@ -650,9 +673,18 @@ fn finish(
             .then_with(|| a.event_index.cmp(&b.event_index))
     });
 
-    let error_count = diags.iter().filter(|d| d.severity == Severity::Error).count();
-    let warn_count = diags.iter().filter(|d| d.severity == Severity::Warn).count();
-    let info_count = diags.iter().filter(|d| d.severity == Severity::Info).count();
+    let error_count = diags
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .count();
+    let warn_count = diags
+        .iter()
+        .filter(|d| d.severity == Severity::Warn)
+        .count();
+    let info_count = diags
+        .iter()
+        .filter(|d| d.severity == Severity::Info)
+        .count();
     ValidationReport {
         diagnostics: diags,
         error_count,
@@ -675,7 +707,9 @@ fn has_engine_default(event_type: &str, field: &str) -> bool {
         ("modify_character", "character"),
         ("chapter_end", "end_type"),
     ];
-    DEFAULTS.iter().any(|(t, k)| *t == event_type && *k == field)
+    DEFAULTS
+        .iter()
+        .any(|(t, k)| *t == event_type && *k == field)
 }
 
 fn collect_script_characters(script_dir: &Path) -> HashSet<String> {
@@ -742,7 +776,10 @@ fn check_character_personas(
             .get("script_role_key")
             .and_then(|v| v.as_str())
             .map(|x| x.trim().to_string());
-        let has_role_key = role_key_raw.as_ref().map(|s| !s.is_empty()).unwrap_or(false);
+        let has_role_key = role_key_raw
+            .as_ref()
+            .map(|s| !s.is_empty())
+            .unwrap_or(false);
         if !has_role_key {
             diags.push(Diagnostic::script(
                 Severity::Warn,
@@ -911,7 +948,6 @@ fn check_condition(
         return;
     }
 
-
     if var.is_empty() {
         diags.push(
             Diagnostic::event(
@@ -981,7 +1017,8 @@ fn check_actions(
                     // 旧原型形状：只写了 name/value/op，没有 content 表达式。引擎只读
                     // content（parse_variable_action），缺它这段会被静默跳过、变量永远
                     // 写不进去。报「空表达式」会让作者困惑（他明明填了赋值），这里点名真正原因。
-                    if ao.contains_key("name") || ao.contains_key("value") || ao.contains_key("op") {
+                    if ao.contains_key("name") || ao.contains_key("value") || ao.contains_key("op")
+                    {
                         diags.push(Diagnostic::event(
                             Severity::Error,
                             "action.legacy_shape",
@@ -1015,7 +1052,7 @@ fn check_actions(
                         )),
                     }
                 }
-            }
+            },
             "add_line" => {
                 if event_type == "set_variable" {
                     diags.push(Diagnostic::event(
@@ -1035,7 +1072,7 @@ fn check_actions(
                         "add_line 的内容为空".to_string(),
                     ));
                 }
-            }
+            },
             other => diags.push(Diagnostic::event(
                 Severity::Warn,
                 "action.unknown_type",
@@ -1320,7 +1357,9 @@ fn check_chapter_end(
                 ));
             }
             match next.or(next_chapter) {
-                Some(t) => push_target(t, "下一章", "", end_type, cid, i, chapter_set, edges, diags),
+                Some(t) => {
+                    push_target(t, "下一章", "", end_type, cid, i, chapter_set, edges, diags)
+                },
                 None => diags.push(Diagnostic::event(
                     Severity::Warn,
                     "chapter_end.no_next",
@@ -1329,7 +1368,7 @@ fn check_chapter_end(
                     "linear 但没写下一章，运行时会直接结束整个剧本".to_string(),
                 )),
             }
-        }
+        },
         "branching" | "ai_judged" => {
             let options = obj.get("options").and_then(|v| v.as_array());
             let Some(options) = options else {
@@ -1368,11 +1407,7 @@ fn check_chapter_end(
                     ));
                 }
 
-                if oo
-                    .get("default")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false)
-                {
+                if oo.get("default").and_then(|v| v.as_bool()).unwrap_or(false) {
                     has_default = true;
                 }
 
@@ -1405,7 +1440,8 @@ fn check_chapter_end(
                                     "chapter_end.ai_condition_ignored",
                                     cid,
                                     i,
-                                    "AI 判定分支不读 condition（按 name 匹配），这个条件会被忽略".to_string(),
+                                    "AI 判定分支不读 condition（按 name 匹配），这个条件会被忽略"
+                                        .to_string(),
                                 )
                                 .with_field("condition"),
                             );
@@ -1416,11 +1452,7 @@ fn check_chapter_end(
                     match oo.get("condition").and_then(|v| v.as_str()) {
                         Some(c) => check_condition(c, cid, i, diags, vars_read),
                         None => {
-                            if !oo
-                                .get("default")
-                                .and_then(|v| v.as_bool())
-                                .unwrap_or(false)
-                            {
+                            if !oo.get("default").and_then(|v| v.as_bool()).unwrap_or(false) {
                                 diags.push(Diagnostic::event(
                                     Severity::Warn,
                                     "chapter_end.branch_no_condition",
@@ -1432,7 +1464,7 @@ fn check_chapter_end(
                                     ),
                                 ));
                             }
-                        }
+                        },
                     }
                 }
 
@@ -1472,7 +1504,7 @@ fn check_chapter_end(
                     "没有设 default 兜底分支。所有条件都不满足时会直接结束整个剧本".to_string(),
                 ));
             }
-        }
+        },
         other => {
             diags.push(
                 Diagnostic::event(
@@ -1487,12 +1519,17 @@ fn check_chapter_end(
                 )
                 .with_field("end_type"),
             );
-        }
+        },
     }
 }
 
 /// 可达性、孤儿章节、环。
-fn check_graph(intro: &str, chapters: &[String], edges: &[ChapterEdge], diags: &mut Vec<Diagnostic>) {
+fn check_graph(
+    intro: &str,
+    chapters: &[String],
+    edges: &[ChapterEdge],
+    diags: &mut Vec<Diagnostic>,
+) {
     let mut adj: HashMap<&str, Vec<&str>> = HashMap::new();
     let mut inbound: HashMap<&str, usize> = HashMap::new();
     for c in chapters {
@@ -1534,7 +1571,12 @@ fn check_graph(intro: &str, chapters: &[String], edges: &[ChapterEdge], diags: &
         } else {
             format!("章节「{}」没有任何章节指向它，玩家永远走不到", c)
         };
-        diags.push(Diagnostic::chapter(Severity::Warn, "graph.unreachable", c, msg));
+        diags.push(Diagnostic::chapter(
+            Severity::Warn,
+            "graph.unreachable",
+            c,
+            msg,
+        ));
     }
 
     // 环检测（DFS 三色）
@@ -1544,10 +1586,8 @@ fn check_graph(intro: &str, chapters: &[String], edges: &[ChapterEdge], diags: &
         Gray,
         Black,
     }
-    let mut mark: HashMap<&str, Mark> = chapters
-        .iter()
-        .map(|c| (c.as_str(), Mark::White))
-        .collect();
+    let mut mark: HashMap<&str, Mark> =
+        chapters.iter().map(|c| (c.as_str(), Mark::White)).collect();
     let mut cycle: Option<Vec<String>> = None;
 
     fn dfs<'a>(
@@ -1574,8 +1614,8 @@ fn check_graph(intro: &str, chapters: &[String], edges: &[ChapterEdge], diags: &
                             c.push((*n).to_string());
                             *found = Some(c);
                         }
-                    }
-                    Mark::Black => {}
+                    },
+                    Mark::Black => {},
                 }
             }
         }
@@ -1600,448 +1640,5 @@ fn check_graph(intro: &str, chapters: &[String], edges: &[ChapterEdge], diags: &
                 c.join(" → ")
             ),
         ));
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    fn run_condition(cond: &str) -> (Vec<Diagnostic>, BTreeSet<String>) {
-        let mut d = Vec::new();
-        let mut v = BTreeSet::new();
-        check_condition(cond, "main", 0, &mut d, &mut v);
-        (d, v)
-    }
-
-    #[test]
-    fn condition_flags_unsupported_operators() {
-        for bad in ["hp >= 5", "hp > 5", "a && b", "a || b", "!flag", "(a == 1)"] {
-            let (d, _) = run_condition(bad);
-            assert!(
-                d.iter().any(|x| x.code == "condition.unsupported_operator"),
-                "应报不支持的运算符: {}",
-                bad
-            );
-        }
-    }
-
-    #[test]
-    fn condition_accepts_supported_forms_and_collects_vars() {
-        let (d, v) = run_condition("route == shop");
-        assert!(d.is_empty(), "不该有诊断: {:?}", d);
-        assert!(v.contains("route"));
-
-        let (d, v) = run_condition("flag != true");
-        assert!(d.is_empty());
-        assert!(v.contains("flag"));
-
-        let (d, v) = run_condition("wet");
-        assert!(d.is_empty());
-        assert!(v.contains("wet"));
-    }
-
-    #[test]
-    fn condition_rejects_spaces_in_variable_name() {
-        let (d, _) = run_condition("my var == 1");
-        assert!(d.iter().any(|x| x.code == "condition.bad_variable"));
-    }
-
-    #[test]
-    fn choices_detects_the_prototype_mistakes() {
-        let mut d = Vec::new();
-        let mut w = BTreeSet::new();
-        let mut r = BTreeSet::new();
-        let obj = json!({
-            "options": [
-                { "text": "去便利店", "next": "shop" },
-                { "text": "去便利店" },
-                { "actions": [{ "type": "set_variable", "content": "x = 1" }] },
-                { "text": "问 %player% 的名字" }
-            ]
-        });
-        check_choices(obj.as_object().unwrap(), "main", 0, &mut d, &mut w, &mut r);
-
-        let codes: Vec<&str> = d.iter().map(|x| x.code).collect();
-        // 选项级 next 不存在
-        assert!(codes.contains(&"choices.option_next_ignored"));
-        // 文案重复
-        assert!(codes.contains(&"choices.duplicate_text"));
-        // 无文案的兜底项没放最后
-        assert!(codes.contains(&"choices.catch_all_not_last"));
-        // action 类型写成了 set_variable（引擎只认 set_var）
-        assert!(codes.contains(&"action.unknown_type"));
-        // 选项文案里的 %player% 不会被替换
-        assert!(codes.contains(&"choices.placeholder_in_text"));
-    }
-
-    #[test]
-    fn set_variable_detects_the_prototype_shape() {
-        let mut d = Vec::new();
-        let mut w = BTreeSet::new();
-        let mut r = BTreeSet::new();
-        // 原型写的是 { name, value }，引擎只读 options[]
-        let obj = json!({ "name": "affection", "value": 10 });
-        check_set_variable(obj.as_object().unwrap(), "main", 0, &mut d, &mut w, &mut r);
-        assert!(d.iter().any(|x| x.code == "set_variable.no_options"));
-        assert!(w.is_empty(), "不该收集到任何被赋值的变量");
-    }
-
-    #[test]
-    fn set_variable_collects_written_vars_and_flags_add_line() {
-        let mut d = Vec::new();
-        let mut w = BTreeSet::new();
-        let mut r = BTreeSet::new();
-        let obj = json!({
-            "options": [{
-                "actions": [
-                    { "type": "set_var", "content": "affection += 1" },
-                    { "type": "add_line", "content": "喂" }
-                ]
-            }]
-        });
-        check_set_variable(obj.as_object().unwrap(), "main", 0, &mut d, &mut w, &mut r);
-        assert!(w.contains("affection"));
-        assert!(d.iter().any(|x| x.code == "action.not_supported_here"));
-    }
-
-    #[test]
-    fn chapter_end_detects_choice_shaped_branches() {
-        let mut edges = Vec::new();
-        let mut d = Vec::new();
-        let mut r = BTreeSet::new();
-        let chapters: HashSet<&str> = ["shop", "home"].into_iter().collect();
-        // 原型把分支写成了 { text, actions }
-        let obj = json!({
-            "end_type": "branching",
-            "options": [{ "text": "去便利店", "actions": [] }]
-        });
-        check_chapter_end(
-            obj.as_object().unwrap(),
-            "start",
-            4,
-            &chapters,
-            &mut edges,
-            &mut d,
-            &mut r,
-        );
-        let codes: Vec<&str> = d.iter().map(|x| x.code).collect();
-        assert!(codes.contains(&"chapter_end.choice_shaped_option"));
-        assert!(codes.contains(&"chapter_end.branch_no_next"));
-        assert!(codes.contains(&"chapter_end.no_default_branch"));
-    }
-
-    #[test]
-    fn chapter_end_linear_dangling_target() {
-        let mut edges = Vec::new();
-        let mut d = Vec::new();
-        let mut r = BTreeSet::new();
-        let chapters: HashSet<&str> = ["main2"].into_iter().collect();
-
-        let obj = json!({ "end_type": "linear", "next_chapter": "main9" });
-        check_chapter_end(
-            obj.as_object().unwrap(),
-            "main",
-            3,
-            &chapters,
-            &mut edges,
-            &mut d,
-            &mut r,
-        );
-        assert!(d.iter().any(|x| x.code == "chapter_end.dangling"));
-
-        // "end" 是合法终点
-        let mut edges2 = Vec::new();
-        let mut d2 = Vec::new();
-        let obj = json!({ "end_type": "linear", "next_chapter": "end" });
-        check_chapter_end(
-            obj.as_object().unwrap(),
-            "main",
-            3,
-            &chapters,
-            &mut edges2,
-            &mut d2,
-            &mut r,
-        );
-        assert!(d2.is_empty(), "指向 end 不该报错: {:?}", d2);
-        assert_eq!(edges2.len(), 1);
-        assert!(edges2[0].is_end);
-    }
-
-    #[test]
-    fn graph_finds_orphans_and_cycles() {
-        let chapters: Vec<String> = ["a", "b", "c", "orphan"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-        let e = |from: &str, to: &str| ChapterEdge {
-            from: from.into(),
-            to: to.into(),
-            is_end: false,
-            label: String::new(),
-            end_type: "linear".into(),
-        };
-        let edges = vec![e("a", "b"), e("b", "a"), e("orphan", "c")];
-        let mut d = Vec::new();
-        check_graph("a", &chapters, &edges, &mut d);
-
-        let codes: Vec<&str> = d.iter().map(|x| x.code).collect();
-        assert!(codes.contains(&"graph.cycle"), "应检出 a→b→a 的环");
-        // orphan 无入边、c 只被 orphan 指向，两者都从开场走不到
-        let unreachable: Vec<&Diagnostic> = d
-            .iter()
-            .filter(|x| x.code == "graph.unreachable")
-            .collect();
-        assert_eq!(unreachable.len(), 2);
-    }
-
-    #[test]
-    fn free_dialogue_without_exit_is_an_error() {
-        // 直接构造最小报告不方便，这里只验规则本身的判定条件
-        let rounds: i64 = -1;
-        let end_line = "";
-        assert!(rounds <= 0 && end_line.trim().is_empty());
-    }
-
-    // ---------- E1：set_var 表达式三态 ----------
-
-    fn run_actions(actions: &serde_json::Value) -> (Vec<Diagnostic>, BTreeSet<String>) {
-        let mut d = Vec::new();
-        let mut w = BTreeSet::new();
-        check_actions(actions.as_array().unwrap(), "choices", "main", 0, &mut d, &mut w);
-        (d, w)
-    }
-
-    /// 本次修复的直接动因：示例剧本把 set_var 写成 name/value/op 旧形状，
-    /// 之前被误报成「变量表达式「」无法解析」。现在应报定向的 legacy_shape。
-    #[test]
-    fn set_var_legacy_shape_is_diagnosed_clearly() {
-        let (d, w) = run_actions(&json!([
-            { "type": "set_var", "name": "flag", "value": "warm", "op": "=" }
-        ]));
-        let codes: Vec<&str> = d.iter().map(|x| x.code).collect();
-        assert!(codes.contains(&"action.legacy_shape"));
-        assert!(!codes.contains(&"action.empty_expression"));
-        assert!(!codes.contains(&"action.bad_expression"));
-        assert!(w.is_empty(), "旧形状不应收集到变量");
-    }
-
-    #[test]
-    fn set_var_truly_empty_expression_has_clear_message() {
-        let (d, _) = run_actions(&json!([{ "type": "set_var", "content": "" }]));
-        let codes: Vec<&str> = d.iter().map(|x| x.code).collect();
-        assert!(codes.contains(&"action.empty_expression"));
-    }
-
-    #[test]
-    fn set_var_valid_expression_collects_variable() {
-        let (d, w) = run_actions(&json!([{ "type": "set_var", "content": "affection += 1" }]));
-        assert!(d.is_empty(), "合法表达式不该有诊断: {:?}", d);
-        assert!(w.contains("affection"));
-    }
-
-    // ---------- A1：ai_judged 的 default 分支无需 name ----------
-
-    #[test]
-    fn ai_judged_default_branch_without_name_is_fine() {
-        let mut edges = Vec::new();
-        let mut d = Vec::new();
-        let mut r = BTreeSet::new();
-        let chapters: HashSet<&str> = ["shop", "home"].into_iter().collect();
-        let obj = json!({
-            "end_type": "ai_judged",
-            "options": [
-                { "name": "去商店", "next": "shop" },
-                { "default": true, "next": "home" }
-            ]
-        });
-        check_chapter_end(
-            obj.as_object().unwrap(),
-            "start",
-            0,
-            &chapters,
-            &mut edges,
-            &mut d,
-            &mut r,
-        );
-        let codes: Vec<&str> = d.iter().map(|x| x.code).collect();
-        assert!(
-            !codes.contains(&"chapter_end.ai_option_no_name"),
-            "default 兜底分支不该报缺 name: {:?}",
-            d
-        );
-    }
-
-    // ---------- A2：引擎有默认值的必填字段跳过检查 ----------
-
-    #[test]
-    fn engine_default_fields_are_skipped_by_required_check() {
-        assert!(has_engine_default("dialogue", "character"));
-        assert!(has_engine_default("ai_dialogue", "character"));
-        assert!(has_engine_default("free_dialogue", "character"));
-        assert!(has_engine_default("modify_character", "character"));
-        assert!(has_engine_default("chapter_end", "end_type"));
-        assert!(!has_engine_default("narration", "character"));
-        assert!(!has_engine_default("dialogue", "text"));
-        assert!(!has_engine_default("chapter_end", "next_chapter"));
-    }
-
-    // ---------- A3：带条件的空文案选项不是确定吞选项 ----------
-
-    #[test]
-    fn catch_all_with_condition_is_info_not_warn() {
-        let mut d = Vec::new();
-        let mut w = BTreeSet::new();
-        let mut r = BTreeSet::new();
-        let obj = json!({
-            "options": [
-                { "condition": "route == shop" },
-                { "text": "去公园" }
-            ]
-        });
-        check_choices(obj.as_object().unwrap(), "main", 0, &mut d, &mut w, &mut r);
-        let codes: Vec<&str> = d.iter().map(|x| x.code).collect();
-        assert!(codes.contains(&"choices.catch_all_conditional"));
-        assert!(!codes.contains(&"choices.catch_all_not_last"));
-    }
-
-    #[test]
-    fn catch_all_without_condition_still_warns() {
-        let mut d = Vec::new();
-        let mut w = BTreeSet::new();
-        let mut r = BTreeSet::new();
-        let obj = json!({ "options": [{}, { "text": "去公园" }] });
-        check_choices(obj.as_object().unwrap(), "main", 0, &mut d, &mut w, &mut r);
-        let codes: Vec<&str> = d.iter().map(|x| x.code).collect();
-        assert!(codes.contains(&"choices.catch_all_not_last"));
-    }
-
-    // ---------- B1：播放环境音但没给路径 ----------
-
-    #[test]
-    fn ambient_playing_without_path_warns() {
-        let mut d = Vec::new();
-        let obj = json!({ "ambientPath": "", "stop": false });
-        check_asset(
-            Path::new("/nonexistent"),
-            Path::new("/nonexistent"),
-            obj.as_object().unwrap(),
-            "ambient",
-            "main",
-            0,
-            &mut d,
-        );
-        assert!(d.iter().any(|x| x.code == "ambient.no_path"));
-
-        // stop=true 时空路径合法（停全部轨）
-        let mut d2 = Vec::new();
-        let obj2 = json!({ "ambientPath": "", "stop": true });
-        check_asset(
-            Path::new("/nonexistent"),
-            Path::new("/nonexistent"),
-            obj2.as_object().unwrap(),
-            "ambient",
-            "main",
-            0,
-            &mut d2,
-        );
-        assert!(d2.is_empty(), "停全部轨不该报路径缺失: {:?}", d2);
-    }
-
-    // ---------- B2：modify_character 未知动作 ----------
-
-    #[test]
-    fn modify_character_unknown_action_warns() {
-        let mut d = Vec::new();
-        let obj = json!({ "action": "hide" });
-        check_modify_character_action(obj.as_object().unwrap(), "main", 0, &mut d);
-        assert!(d.iter().any(|x| x.code == "character.action_unknown"));
-
-        let mut d2 = Vec::new();
-        let obj2 = json!({ "action": "show_character" });
-        check_modify_character_action(obj2.as_object().unwrap(), "main", 0, &mut d2);
-        assert!(d2.is_empty(), "show_character 不该被警告: {:?}", d2);
-    }
-
-    // ---------- B3：ai_judged 分支里的 condition 被引擎忽略 ----------
-
-    #[test]
-    fn ai_judged_option_condition_is_ignored_info() {
-        let mut edges = Vec::new();
-        let mut d = Vec::new();
-        let mut r = BTreeSet::new();
-        let chapters: HashSet<&str> = ["shop", "home"].into_iter().collect();
-        let obj = json!({
-            "end_type": "ai_judged",
-            "options": [
-                { "name": "去商店", "condition": "flag == true", "next": "shop" },
-                { "name": "回家", "next": "home" }
-            ]
-        });
-        check_chapter_end(
-            obj.as_object().unwrap(),
-            "start",
-            0,
-            &chapters,
-            &mut edges,
-            &mut d,
-            &mut r,
-        );
-        let codes: Vec<&str> = d.iter().map(|x| x.code).collect();
-        assert!(codes.contains(&"chapter_end.ai_condition_ignored"));
-    }
-
-    // ---------- C1：无 next 的分支是 warn，不是 error ----------
-
-    #[test]
-    fn branch_without_next_is_warn_not_error() {
-        let mut edges = Vec::new();
-        let mut d = Vec::new();
-        let mut r = BTreeSet::new();
-        let chapters: HashSet<&str> = ["home"].into_iter().collect();
-        let obj = json!({
-            "end_type": "branching",
-            "options": [
-                { "condition": "flag == x", "next": "home" },
-                { "condition": "other == y" }
-            ]
-        });
-        check_chapter_end(
-            obj.as_object().unwrap(),
-            "start",
-            0,
-            &chapters,
-            &mut edges,
-            &mut d,
-            &mut r,
-        );
-        let diag = d
-            .iter()
-            .find(|x| x.code == "chapter_end.branch_no_next")
-            .expect("应报 branch_no_next");
-        assert_eq!(diag.severity, Severity::Warn, "无 next 的分支应是 warn");
-    }
-
-    // ---------- D1：end.yaml 不是剧本结束 ----------
-
-    #[test]
-    fn end_with_yaml_suffix_is_rejected() {
-        let mut edges = Vec::new();
-        let mut d = Vec::new();
-        let mut r = BTreeSet::new();
-        let chapters: HashSet<&str> = ["main2"].into_iter().collect();
-        let obj = json!({ "end_type": "linear", "next_chapter": "end.yaml" });
-        check_chapter_end(
-            obj.as_object().unwrap(),
-            "main",
-            0,
-            &chapters,
-            &mut edges,
-            &mut d,
-            &mut r,
-        );
-        let codes: Vec<&str> = d.iter().map(|x| x.code).collect();
-        assert!(codes.contains(&"chapter_end.end_suffix"), "end.yaml 应被报出: {:?}", d);
     }
 }

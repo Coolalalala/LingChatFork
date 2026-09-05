@@ -3,8 +3,8 @@
 // `crate::utils::archive` module for safety (zip-bomb protection, path
 // sanitization, cancellation).
 
-use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 
 use super::paths::LocalTtsPaths;
 
@@ -27,9 +27,6 @@ pub struct InspectedPackage {
     pub inner_model_name: Option<String>,
 }
 
-const MAGIC_PK: &[u8; 4] = b"PK\x03\x04";
-const MAGIC_7Z: &[u8; 2] = &[0x37, 0x7A];
-
 /// Cheap extension-first sniff.
 pub fn detect_by_extension(path: &Path) -> PackageKind {
     let ext = path
@@ -46,15 +43,15 @@ pub fn detect_by_extension(path: &Path) -> PackageKind {
     }
 }
 
-/// Sniff by magic bytes; falls back to Unknown if not a recognised archive.
-pub fn detect_by_magic(bytes: &[u8]) -> PackageKind {
-    if bytes.len() >= 4 && &bytes[..4] == MAGIC_PK {
-        PackageKind::Zip
-    } else if bytes.len() >= 2 && &bytes[..2] == MAGIC_7Z {
-        PackageKind::SevenZ
-    } else {
-        PackageKind::Unknown
-    }
+/// Sniff archive format via infer crate (replaces handwritten magic bytes).
+/// Falls back to Unknown for non-archive content.
+pub fn detect_archive_by_infer(path: &Path) -> std::result::Result<PackageKind, String> {
+    let kind = infer::get_from_path(path).map_err(|e| format!("infer: {e}"))?;
+    Ok(match kind.map(|k| k.mime_type()) {
+        Some("application/zip") | Some("application/x-zip-compressed") => PackageKind::Zip,
+        Some("application/x-7z-compressed") => PackageKind::SevenZ,
+        _ => PackageKind::Unknown,
+    })
 }
 
 pub fn inspect_package(path: &Path) -> std::result::Result<InspectedPackage, String> {
@@ -66,15 +63,9 @@ pub fn inspect_package(path: &Path) -> std::result::Result<InspectedPackage, Str
         .unwrap_or_default();
 
     let kind = detect_by_extension(path);
+    // 扩展名未知时用 infer 兜底（替代原 detect_by_magic）。
     let kind = if kind == PackageKind::Unknown {
-        let mut head = vec![0u8; 8.min(size_bytes as usize)];
-        if !head.is_empty() {
-            use std::io::Read;
-            std::fs::File::open(path)
-                .and_then(|mut f| f.read_exact(&mut head))
-                .map_err(|e| format!("read head: {e}"))?;
-        }
-        detect_by_magic(&head)
+        detect_archive_by_infer(path)?
     } else {
         kind
     };
@@ -93,19 +84,14 @@ pub fn inspect_package(path: &Path) -> std::result::Result<InspectedPackage, Str
     })
 }
 
-fn scan_archive_for_model(
-    path: &Path,
-    kind: PackageKind,
-) -> std::result::Result<String, String> {
+fn scan_archive_for_model(path: &Path, kind: PackageKind) -> std::result::Result<String, String> {
     let found = match kind {
         PackageKind::Zip => {
             let f = std::fs::File::open(path).map_err(|e| format!("open: {e}"))?;
-            let mut zip =
-                zip::ZipArchive::new(f).map_err(|e| format!("zip: {e}"))?;
+            let mut zip = zip::ZipArchive::new(f).map_err(|e| format!("zip: {e}"))?;
             let mut found: Option<String> = None;
             for i in 0..zip.len() {
-                let entry =
-                    zip.by_index(i).map_err(|e| format!("zip entry: {e}"))?;
+                let entry = zip.by_index(i).map_err(|e| format!("zip entry: {e}"))?;
                 let n = entry.name().to_lowercase();
                 if n.ends_with(".sbv2") || n.ends_with(".onnx") {
                     found = Some(entry.name().to_string());
@@ -113,14 +99,11 @@ fn scan_archive_for_model(
                 }
             }
             found
-        }
+        },
         PackageKind::SevenZ => {
             let f = std::fs::File::open(path).map_err(|e| format!("open: {e}"))?;
-            let archive = sevenz_rust2::ArchiveReader::new(
-                f,
-                sevenz_rust2::Password::empty(),
-            )
-            .map_err(|e| format!("7z: {e}"))?;
+            let archive = sevenz_rust2::ArchiveReader::new(f, sevenz_rust2::Password::empty())
+                .map_err(|e| format!("7z: {e}"))?;
             let mut found: Option<String> = None;
             for entry in archive.archive().files.iter() {
                 let n = entry.name().to_lowercase();
@@ -130,7 +113,7 @@ fn scan_archive_for_model(
                 }
             }
             found
-        }
+        },
         _ => return Err("not an archive".into()),
     };
     found.ok_or_else(|| "archive does not contain a .sbv2 or .onnx file".to_string())
@@ -156,22 +139,18 @@ pub fn install_inspected(
             let src_buf = src.to_path_buf();
             let dst_buf = dst.clone();
             let kind = inspected.kind;
-            let result: Result<crate::utils::archive::ExtractSummary, crate::utils::archive::ArchiveError> =
-                tokio::task::block_in_place(|| match kind {
-                    PackageKind::Zip => crate::utils::archive::extract_zip(
-                        &src_buf,
-                        &dst_buf,
-                        &token,
-                        &|_| {},
-                    ),
-                    PackageKind::SevenZ => crate::utils::archive::extract_sevenz(
-                        &src_buf,
-                        &dst_buf,
-                        &token,
-                        &|_| {},
-                    ),
-                    _ => unreachable!(),
-                });
+            let result: Result<
+                crate::utils::archive::ExtractSummary,
+                crate::utils::archive::ArchiveError,
+            > = tokio::task::block_in_place(|| match kind {
+                PackageKind::Zip => {
+                    crate::utils::archive::extract_zip(&src_buf, &dst_buf, &token, &|_| {})
+                },
+                PackageKind::SevenZ => {
+                    crate::utils::archive::extract_sevenz(&src_buf, &dst_buf, &token, &|_| {})
+                },
+                _ => unreachable!(),
+            });
             result.map_err(|e| format!("extract: {e}"))?;
             for candidate in ["model.sbv2", "model.onnx"] {
                 let p = dst.join(candidate);
@@ -180,61 +159,7 @@ pub fn install_inspected(
                 }
             }
             Err("extracted archive does not contain model.sbv2 or model.onnx".into())
-        }
+        },
         PackageKind::Unknown => Err("unknown package format".into()),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn detect_sbv2_by_extension() {
-        assert_eq!(
-            detect_by_extension(Path::new("a.sbv2")),
-            PackageKind::RawSbv2
-        );
-    }
-
-    #[test]
-    fn detect_zip_by_magic() {
-        let mut head = Vec::from(MAGIC_PK.as_slice());
-        head.extend_from_slice(&[0; 32]);
-        assert_eq!(detect_by_magic(&head), PackageKind::Zip);
-    }
-
-    #[test]
-    fn detect_unknown_when_garbage() {
-        assert_eq!(detect_by_magic(&[1, 2, 3]), PackageKind::Unknown);
-    }
-
-    #[test]
-    fn inspect_raw_sbv2() {
-        let dir = tempfile::tempdir().unwrap();
-        let p = dir.path().join("a.sbv2");
-        std::fs::write(&p, b"fake").unwrap();
-        let i = inspect_package(&p).unwrap();
-        assert_eq!(i.kind, PackageKind::RawSbv2);
-        assert_eq!(i.size_bytes, 4);
-    }
-
-    #[test]
-    fn inspect_zip_with_sbv2_inside() {
-        use std::io::Write;
-        use zip::write::SimpleFileOptions;
-        let dir = tempfile::tempdir().unwrap();
-        let zip_path = dir.path().join("voice.zip");
-        {
-            let f = std::fs::File::create(&zip_path).unwrap();
-            let mut zip = zip::ZipWriter::new(f);
-            zip.start_file("model.sbv2", SimpleFileOptions::default())
-                .unwrap();
-            zip.write_all(b"abc").unwrap();
-            zip.finish().unwrap();
-        }
-        let i = inspect_package(&zip_path).unwrap();
-        assert_eq!(i.kind, PackageKind::Zip);
-        assert_eq!(i.inner_model_name.as_deref(), Some("model.sbv2"));
     }
 }

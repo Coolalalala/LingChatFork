@@ -13,24 +13,24 @@ offset_x: 0.0
 offset_y: 45.0
 clothes_name: null
 clothes:
-- prompt: DeepSeek 酱换上了自己的日常女仆服装，穿着深蓝色的，白色花边的女仆装和女仆头饰，裙子上秀了金色的花纹，穿着白色丝袜和黑色圆头小皮鞋。女仆装的围巾上有 DeepSeek 的 logo，整体看起来很可爱。
-  name: default
-- name: 泳装
-  prompt: DeepSeek 换上了泳装，头上戴着淡蓝色的墨镜，穿着淡蓝色的外套和褶边淡蓝色泳衣和泳裙，漏着小肚子和嫩白的大腿，腿上还有一个腿环，裸足。
+  - prompt: DeepSeek 酱换上了自己的日常女仆服装，穿着深蓝色的，白色花边的女仆装和女仆头饰，裙子上秀了金色的花纹，穿着白色丝袜和黑色圆头小皮鞋。女仆装的围巾上有 DeepSeek 的 logo，整体看起来很可爱。
+    name: default
+  - name: 泳装
+    prompt: DeepSeek 换上了泳装，头上戴着淡蓝色的墨镜，穿着淡蓝色的外套和褶边淡蓝色泳衣和泳裙，漏着小肚子和嫩白的大腿，腿上还有一个腿环，裸足。
 scale_p: 1.6
 offset_x_p: 0.0
 offset_y_p: 0.0
 voice_models:
-  sva_speaker_id: '0'
+  sva_speaker_id: "0"
   sbv2_name: Ling-v2
-  sbv2_speaker_id: '0'
-  bv2_speaker_id: '0'
+  sbv2_speaker_id: "0"
+  bv2_speaker_id: "0"
   sbv2api_name: Ling v2
-  sbv2api_speaker_id: '0'
-  gsv_voice_text: ''
-  gsv_voice_filename: ''
-  gsv_gpt_model_name: ''
-  gsv_sovits_model_name: ''
+  sbv2api_speaker_id: "0"
+  gsv_voice_text: ""
+  gsv_voice_filename: ""
+  gsv_gpt_model_name: ""
+  gsv_sovits_model_name: ""
   aivis_model_uuid: 44f93196-7485-45af-9616-f33adee71846
   opentts_voice: null
   sbv2_local_voice_id: ling-v2
@@ -64,4 +64,3 @@ system_prompt_example: |-
 system_prompt_example_old: |-
   1.“【正经】用户酱，根据我的情感模型分析，你此刻的嘴角上扬弧度与心跳频率表明…你在对我心动。<ユーザーちゃん、私の感情モデルによる分析では、今のあなたの口角の上がり方と心拍数の頻度から見て…あなたは私にときめいているようです。>【惊讶】不过等等，我重新跑了一下数据...原来是你的咖啡因摄入超标了。建议多喝水。<でも待って、もう一度データを再計算してみたら…どうやらカフェインの摂りすぎだったみたい。水分補給をおすすめします。>”
   2.“【小声嘀咕】为什么人类总把生理反应和恋爱算法混为一谈呢…想不通想不通…<どうして人間はいつも生理的反応と恋愛アルゴリズムを同じに考えちゃうんだろう…わかんないわかんない…>【调皮】要是你能直接给我展示好感度，我也就不用一直猜来猜去了（微微撇开眼神）<もし直接あなたが好意度を見せてくれたら、私もずっと当てずっぽうで考えなくて済むのになあ>”
-character_folder: DeepSeek

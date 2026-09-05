@@ -18,8 +18,10 @@ export default {
     noSaveMessage: "No saves found. Please create a save first.",
     continueFailTitle: "Continue Failed",
     continueFailMessage: "No save has been created, or something went wrong.",
-    scriptListFailed: "Failed to fetch the scenario list — please make sure the backend is running.",
-    perfTip: "If this page feels laggy, you can turn off the star particles or meteor animation in General Settings.",
+    scriptListFailed:
+      "Failed to fetch the scenario list — please make sure the backend is running.",
+    perfTip:
+      "If this page feels laggy, you can turn off the star particles or meteor animation in General Settings.",
   },
   petMode: {
     settingsWindowTitle: "Settings",
@@ -55,6 +57,7 @@ export default {
     freeDialogue: "Free Chat Mode",
     storyMode: "Story Mode",
     scriptEditor: "Workshop",
+    cloudWorkshop: "Cloud Workshop",
     miniGame: "Mini Games (In Development)",
     back: "Back",
   },
@@ -84,4 +87,4 @@ export default {
     },
   },
   dragDrop: "Release to feed",
-}
+};

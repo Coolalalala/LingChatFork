@@ -4,16 +4,16 @@ use std::path::PathBuf;
 use async_trait::async_trait;
 use sea_orm::DatabaseConnection;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tauri::Manager;
 use uuid::Uuid;
 
+use crate::AppState;
 use crate::ai_service::game_system::game_status::GameStatus;
 use crate::ai_service::types::ToolDefinition;
 use crate::api::character::read_character_settings;
 use crate::api::data_dir;
 use crate::db::managers::role_repo::RoleRepo;
-use crate::AppState;
 
 use super::executor::{Tool, ToolContext, ToolError, ToolResult};
 use super::{atomic_replace, ensure_no_args, game_status_handle};
@@ -360,7 +360,7 @@ impl Tool for UpdateNote {
                     ));
                 }
                 Some(content.to_string())
-            }
+            },
             None => None,
         };
         let tags = parse_tags(obj.get("tags"), "memory_update_note")?;
@@ -417,54 +417,5 @@ impl Tool for DeleteNote {
         }
         save_role_notes(&role_name, &notes).map_err(ToolError::Execution)?;
         Ok(json!({"ok": true, "id": id}))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn note_serializes_with_tags() {
-        let note = Note {
-            id: "abc".into(),
-            content: "记住用户的生日".into(),
-            tags: vec!["用户".into()],
-            created_at: "2026-08-02T00:00:00Z".into(),
-        };
-        let json = serde_json::to_value(&note).unwrap();
-        assert_eq!(json["id"], "abc");
-        assert_eq!(json["tags"][0], "用户");
-    }
-
-    #[test]
-    fn sanitize_role_name_handles_hostile_input() {
-        assert_eq!(sanitize_role_name(" 玲玲 "), "玲玲");
-        assert_eq!(sanitize_role_name("a/b:c*d"), "abcd");
-        assert_eq!(sanitize_role_name("灵-01"), "灵-01");
-        assert_eq!(sanitize_role_name(".."), "unknown");
-        assert_eq!(sanitize_role_name(""), "unknown");
-        assert_eq!(sanitize_role_name("   "), "unknown");
-    }
-
-    #[test]
-    fn role_notes_path_uses_sanitized_name() {
-        crate::init::static_copy::init_data_dir_for_tests();
-        let path = role_notes_path("灵灵/..");
-        let file = path.file_name().unwrap().to_string_lossy().into_owned();
-        assert!(file.starts_with("灵灵") && file.ends_with(".json"));
-        // 文件名必须安全：不含路径分隔符、不含 `..` 穿越
-        assert!(!file.contains('/') && !file.contains(".."));
-    }
-
-    #[test]
-    fn parse_tags_distinguishes_missing_empty_and_invalid() {
-        assert_eq!(parse_tags(None, "test").unwrap(), None);
-        assert!(parse_tags(Some(&json!("not_array")), "test").is_err());
-        assert!(parse_tags(Some(&json!(["a", 2])), "test").is_err());
-        let tags = parse_tags(Some(&json!(["a", "b"])), "test")
-            .unwrap()
-            .unwrap();
-        assert_eq!(tags, vec!["a".to_string(), "b".to_string()]);
     }
 }

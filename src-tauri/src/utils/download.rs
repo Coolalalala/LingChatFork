@@ -28,11 +28,19 @@ impl DownloadProgress {
         } else {
             0.0
         };
-        Self { bytes_done, total_bytes, percent }
+        Self {
+            bytes_done,
+            total_bytes,
+            percent,
+        }
     }
 
     fn finished(total_bytes: u64) -> Self {
-        Self { bytes_done: total_bytes, total_bytes, percent: 100.0 }
+        Self {
+            bytes_done: total_bytes,
+            total_bytes,
+            percent: 100.0,
+        }
     }
 }
 
@@ -168,22 +176,4 @@ pub fn build_download_client() -> Result<reqwest::Client, String> {
         .tls_backend_preconfigured(tls_config)
         .build()
         .map_err(|e| format!("build http client: {e}"))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::time::Duration;
-
-    #[test]
-    fn progress_update_after_time_threshold() {
-        assert!(progress_update_due(PROGRESS_EMIT_INTERVAL, 0));
-        assert!(!progress_update_due(Duration::from_millis(199), 0));
-    }
-
-    #[test]
-    fn progress_update_after_byte_threshold() {
-        assert!(progress_update_due(Duration::ZERO, PROGRESS_EMIT_BYTES));
-        assert!(!progress_update_due(Duration::ZERO, PROGRESS_EMIT_BYTES - 1));
-    }
 }

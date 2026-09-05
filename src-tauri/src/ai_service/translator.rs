@@ -11,7 +11,7 @@
 
 use anyhow::Result;
 
-use crate::ai_service::llm::{slot_snapshot, LlmSlot};
+use crate::ai_service::llm::{LlmSlot, slot_snapshot};
 use crate::ai_service::message_system::processor::EmotionSegment;
 use crate::ai_service::types::LlmMessage;
 
@@ -20,6 +20,12 @@ fn translator_system_prompt(target_lang: &str) -> Option<String> {
         "ja" => ("日语", "使用自然、口语化且符合二次元角色语气的日语表达。"),
         "en" => ("英语", "使用自然、口语化的英语表达。"),
         "ko" => ("韩语", "使用自然、口语化且符合角色语气的韩语表达。"),
+        "es" => ("西班牙语", "使用自然、口语化且符合角色语气的西班牙语表达。"),
+        "ar" => ("阿拉伯语", "使用自然、口语化且符合角色语气的阿拉伯语表达。"),
+        "de" => ("德语", "使用自然、口语化的德语表达。"),
+        "fr" => ("法语", "使用自然、口语化的法语表达。"),
+        "ru" => ("俄语", "使用自然、口语化的俄语表达。"),
+        "pt" => ("葡萄牙语", "使用自然、口语化的葡萄牙语表达。"),
         _ => return None,
     };
 

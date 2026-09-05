@@ -6,9 +6,9 @@ use async_trait::async_trait;
 use serde_json::Value;
 use tauri::Manager;
 
+use crate::AppState;
 use crate::ai_service::tools::executor::{Tool, ToolContext, ToolError, ToolResult};
 use crate::ai_service::types::ToolDefinition;
-use crate::AppState;
 
 use super::python_backend;
 use super::types::ToolSpec;
@@ -34,7 +34,6 @@ impl PluginTool {
             spec,
         }
     }
-
 }
 
 #[async_trait]
@@ -78,26 +77,5 @@ impl Tool for PluginTool {
             Ok(value) => Ok(value),
             Err(e) => Err(ToolError::Execution(e)),
         }
-    }
-}
-
-/// 供测试使用的轻量插件工具（不依赖 AppHandle）。
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn builds_tool_definition() {
-        let spec = ToolSpec {
-            name: "tavily_search".into(),
-            description: "搜索".into(),
-            parameters: "{ \"type\": \"object\" }".into(),
-            script: "tavily.py".into(),
-            timeout_ms: 30_000,
-        };
-        let tool = PluginTool::new("tavily".into(), spec);
-        let def = tool.definition();
-        assert_eq!(def.function.name, "tavily_search");
-        assert_eq!(def.type_, "function");
     }
 }

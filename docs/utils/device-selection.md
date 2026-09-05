@@ -8,13 +8,13 @@
 
 ## 能力概览
 
-| 函数 | 作用 | 平台 |
-|------|------|------|
-| `parse_device(str)` | 解析设备字符串 → `InferenceDevice` | 全平台 |
-| `device_to_string(InferenceDevice)` | 序列化设备为配置字符串 | 全平台 |
-| `list_devices()` | 枚举 DirectML GPU 列表 | Windows（其他平台空） |
-| `read_configured_device(app, key)` | 从 settings.json 读持久化设备 | 全平台 |
-| `read_settings_string(app, key)` | 读任意 settings.json 字符串配置 | 全平台 |
+| 函数                                | 作用                               | 平台                  |
+| ----------------------------------- | ---------------------------------- | --------------------- |
+| `parse_device(str)`                 | 解析设备字符串 → `InferenceDevice` | 全平台                |
+| `device_to_string(InferenceDevice)` | 序列化设备为配置字符串             | 全平台                |
+| `list_devices()`                    | 枚举 DirectML GPU 列表             | Windows（其他平台空） |
+| `read_configured_device(app, key)`  | 从 settings.json 读持久化设备      | 全平台                |
+| `read_settings_string(app, key)`    | 读任意 settings.json 字符串配置    | 全平台                |
 
 ## 类型
 
@@ -115,12 +115,6 @@ let some_setting = read_settings_string(&app, "llm.provider");
 - **Windows**：GPU/NPU 可用（DirectML），`list_devices()` 返回真实 GPU 列表
 - **Android/Linux**：只有 CPU（`parse_device` 非 "cpu" 报错，`list_devices()` 空）
 - 前端按平台显示设备选项（TTS 设置页用 `isWindows` 控制显示）
-
-## 测试
-
-`cargo test --lib utils::device` 覆盖：
-- 设备字符串解析（cpu/gpu/npu/device:id/非法值）
-- `device_to_string` 往返
 
 ## 配置键
 

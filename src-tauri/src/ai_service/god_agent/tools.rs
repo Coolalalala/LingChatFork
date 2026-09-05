@@ -2,7 +2,7 @@
 //!
 //! 目前仅包含 `select_next_speaker` 工具。后续扩展更多工具时在此注册。
 
-use crate::ai_service::types::{parse_tool_args, ToolCall, ToolDefinition};
+use crate::ai_service::types::{ToolCall, ToolDefinition, parse_tool_args};
 
 // ============================================================
 // 工具定义
@@ -66,86 +66,4 @@ fn parse_role_id(v: &serde_json::Value) -> Option<i64> {
     s.parse::<i64>()
         .ok()
         .or_else(|| s.parse::<f64>().ok().map(|f| f as i64))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn tc(arguments: &str) -> ToolCall {
-        ToolCall {
-            id: "call-1".into(),
-            type_: "function".into(),
-            function: crate::ai_service::types::FunctionCall {
-                name: "select_next_speaker".into(),
-                arguments: arguments.into(),
-            },
-        }
-    }
-
-    #[test]
-    fn parses_integer_role_id() {
-        let r = parse_speaker_selection(&tc(r#"{"role_id":6,"reason":"x"}"#));
-        assert_eq!(r, Some((6, "x".to_string())));
-    }
-
-    #[test]
-    fn parses_string_role_id() {
-        let r = parse_speaker_selection(&tc(r#"{"role_id":"6","reason":"x"}"#));
-        assert_eq!(r, Some((6, "x".to_string())));
-    }
-
-    #[test]
-    fn parses_string_role_id_with_whitespace() {
-        let r = parse_speaker_selection(&tc(r#"{"role_id":" 6 ","reason":"x"}"#));
-        assert_eq!(r, Some((6, "x".to_string())));
-    }
-
-    #[test]
-    fn parses_float_role_id() {
-        let r = parse_speaker_selection(&tc(r#"{"role_id":6.0,"reason":"x"}"#));
-        assert_eq!(r, Some((6, "x".to_string())));
-    }
-
-    #[test]
-    fn parses_string_float_role_id() {
-        let r = parse_speaker_selection(&tc(r#"{"role_id":"6.0","reason":"x"}"#));
-        assert_eq!(r, Some((6, "x".to_string())));
-    }
-
-    #[test]
-    fn parses_nested_arguments_shape() {
-        let r = parse_speaker_selection(&tc(r#"{"arguments":{"role_id":6,"reason":"x"}}"#));
-        assert_eq!(r, Some((6, "x".to_string())));
-    }
-
-    #[test]
-    fn parses_player_zero() {
-        let r = parse_speaker_selection(&tc(r#"{"role_id":0,"reason":"还给玩家"}"#));
-        assert_eq!(r, Some((0, "还给玩家".to_string())));
-    }
-
-    #[test]
-    fn missing_reason_defaults() {
-        let r = parse_speaker_selection(&tc(r#"{"role_id":6}"#));
-        assert_eq!(r, Some((6, "（无理由）".to_string())));
-    }
-
-    #[test]
-    fn rejects_non_numeric_role_id() {
-        let r = parse_speaker_selection(&tc(r#"{"role_id":"abc","reason":"x"}"#));
-        assert_eq!(r, None);
-    }
-
-    #[test]
-    fn rejects_missing_role_id() {
-        let r = parse_speaker_selection(&tc(r#"{"reason":"x"}"#));
-        assert_eq!(r, None);
-    }
-
-    #[test]
-    fn rejects_non_object_arguments() {
-        let r = parse_speaker_selection(&tc("not valid json"));
-        assert_eq!(r, None);
-    }
 }

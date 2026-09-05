@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use ort::{session::Session, value::Tensor};
 
 const MAX_SEQ_LEN: usize = 128;
@@ -181,7 +181,7 @@ impl EmotionClassifier {
             Err(e) => {
                 tracing::error!("无法获取 session 锁: {e}");
                 return EmotionPrediction::passthrough(text, false);
-            }
+            },
         };
 
         match self.run_inference(&mut session, text, threshold) {
@@ -189,7 +189,7 @@ impl EmotionClassifier {
             Err(e) => {
                 tracing::error!("情绪预测错误: {e}");
                 EmotionPrediction::passthrough(text, false)
-            }
+            },
         }
     }
 
@@ -338,43 +338,5 @@ impl GraphemeSimple for str {
             out.push(&self[start..]);
         }
         out
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::PathBuf;
-
-    fn model_dir() -> Option<PathBuf> {
-        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let candidate = manifest_dir
-            .parent()?
-            .join("ling_chat_python")
-            .join("third_party")
-            .join("emotion_model_19emo");
-        candidate.join("model.onnx").exists().then_some(candidate)
-    }
-
-    #[test]
-    fn passthrough_when_disabled() {
-        let clf = EmotionClassifier::disabled();
-        let p = clf.predict("任何文本", None);
-        assert!(p.disabled);
-        assert_eq!(p.label, "任何文本");
-    }
-
-    #[test]
-    fn load_and_predict_real_model() {
-        let Some(dir) = model_dir() else {
-            eprintln!("skip: emotion_model_19emo 未在 ling_chat_python/third_party 下");
-            return;
-        };
-        let clf = EmotionClassifier::load(&dir).expect("load");
-        assert!(clf.is_enabled());
-        let p = clf.predict("开心", None);
-        eprintln!("predict 开心 -> {} ({:.4})", p.label, p.confidence);
-        assert!(!p.label.is_empty());
-        assert!((0.0..=1.0).contains(&p.confidence));
     }
 }

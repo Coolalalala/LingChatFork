@@ -11,17 +11,11 @@ use serde::Serialize;
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SkillAgentEvent {
     /// 运行生命周期状态（如「思考中…」「已停止生成」）。
-    Status {
-        content: String,
-    },
+    Status { content: String },
     /// 流式文本增量。
-    MessageDelta {
-        content: String,
-    },
+    MessageDelta { content: String },
     /// 思考链增量（仅统计展示，不进入正式回复）。
-    Reasoning {
-        content: String,
-    },
+    Reasoning { content: String },
     /// 一个工具即将被调用。
     ToolCall {
         call_id: String,
@@ -40,6 +34,7 @@ pub enum SkillAgentEvent {
         error: Option<String>,
     },
     /// 命令需要用户审批。
+    #[cfg_attr(not(desktop), allow(dead_code))]
     PendingApproval {
         request_id: String,
         tool: String,
@@ -51,10 +46,10 @@ pub enum SkillAgentEvent {
         /// 本轮累计 token 用量；provider 未上报时为 `None`。
         usage: Option<Usage>,
     },
+    /// 会话标题已自动生成（首轮回复结束后由后台任务生成，经此事件通知前端刷新列表）。
+    ConversationTitle { title: String },
     /// 致命错误。
-    Error {
-        message: String,
-    },
+    Error { message: String },
 }
 
 /// Token 用量。
@@ -63,4 +58,6 @@ pub struct Usage {
     pub prompt_tokens: u64,
     pub completion_tokens: u64,
     pub total_tokens: u64,
+    /// 输入中命中缓存（cache read）的 token 数；provider 未上报缓存时为 0。
+    pub cached_tokens: u64,
 }

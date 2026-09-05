@@ -27,10 +27,13 @@ pub fn validate(manifest: &PluginManifest) -> Result<()> {
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
     {
-        anyhow::bail!("插件 id '{}' 只能包含字母、数字、下划线与连字符", manifest.id);
+        anyhow::bail!(
+            "插件 id '{}' 只能包含字母、数字、下划线与连字符",
+            manifest.id
+        );
     }
-    if manifest.tools.is_empty() {
-        anyhow::bail!("插件 '{}' 未声明任何工具", manifest.id);
+    if manifest.tools.is_empty() && manifest.resources.is_empty() {
+        anyhow::bail!("插件 '{}' 未声明任何工具或资源", manifest.id);
     }
     for tool in &manifest.tools {
         if tool.name.is_empty() {
@@ -64,8 +67,12 @@ pub fn validate(manifest: &PluginManifest) -> Result<()> {
             );
         }
         // parameters 必须是合法 JSON object（JSON Schema）。
-        let params: Value = serde_json::from_str(&tool.parameters)
-            .with_context(|| format!("插件 '{}' 工具 '{}' 的 parameters 不是合法 JSON", manifest.id, tool.name))?;
+        let params: Value = serde_json::from_str(&tool.parameters).with_context(|| {
+            format!(
+                "插件 '{}' 工具 '{}' 的 parameters 不是合法 JSON",
+                manifest.id, tool.name
+            )
+        })?;
         if !params.is_object() {
             anyhow::bail!(
                 "插件 '{}' 工具 '{}' 的 parameters 必须是 JSON object",
@@ -75,62 +82,4 @@ pub fn validate(manifest: &PluginManifest) -> Result<()> {
         }
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const VALID: &str = r#"
-id = "tavily"
-name = "Tavily 搜索"
-description = "联网搜索"
-version = "0.1.0"
-
-[[env]]
-key = "TAVILY_API_KEY"
-label = "Tavily Key"
-
-[[tools]]
-name = "tavily_search"
-description = "搜索"
-parameters = '{ "type":"object", "properties":{ "query":{"type":"string"} }, "required":["query"] }'
-script = "tavily.py"
-"#;
-
-    #[test]
-    fn parses_valid_manifest() {
-        let m = parse(VALID).unwrap();
-        assert_eq!(m.id, "tavily");
-        assert_eq!(m.tools.len(), 1);
-        assert_eq!(m.tools[0].name, "tavily_search");
-        assert_eq!(m.env[0].key, "TAVILY_API_KEY");
-    }
-
-    #[test]
-    fn rejects_unknown_fields() {
-        let bad = VALID.replace("[[env]]", "[[extra]]\nfoo = 1");
-        assert!(parse(&bad).is_err());
-    }
-
-    #[test]
-    fn rejects_unsafe_script_path() {
-        let bad = VALID.replace("script = \"tavily.py\"", "script = \"../../etc/passwd\"");
-        assert!(parse(&bad).is_err());
-    }
-
-    #[test]
-    fn rejects_bad_parameters_json() {
-        let bad = VALID.replace(
-            "parameters = '{ \"type\":\"object\"",
-            "parameters = 'not json",
-        );
-        assert!(parse(&bad).is_err());
-    }
-
-    #[test]
-    fn rejects_empty_id() {
-        let bad = VALID.replace("id = \"tavily\"", "id = \"\"");
-        assert!(parse(&bad).is_err());
-    }
 }

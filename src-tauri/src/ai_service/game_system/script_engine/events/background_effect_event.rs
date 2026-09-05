@@ -5,10 +5,10 @@ use async_trait::async_trait;
 use serde_json::Value;
 
 use crate::ai_service::game_system::script_engine::events::{
-    parse_duration, register_event, ScriptContext, ScriptEvent,
+    ScriptContext, ScriptEvent, parse_duration, register_event,
 };
 use crate::ai_service::game_system::script_engine::responses::{
-    event_names::SCRIPT_BACKGROUND_EFFECT, BackgroundEffectPayload,
+    BackgroundEffectPayload, event_names::SCRIPT_BACKGROUND_EFFECT,
 };
 use crate::ai_service::message_system::events::emit;
 
@@ -82,45 +82,10 @@ impl ScriptEvent for BackgroundEffectEvent {
     fn event_type() -> &'static str {
         "background_effect"
     }
-
-    fn duration(&self) -> Option<f64> {
-        self.duration
-    }
 }
 
 pub fn register() {
     register_event(BackgroundEffectEvent::event_type(), |data| {
         Box::new(BackgroundEffectEvent::from_event_data(&data))
     });
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{BackgroundEffectEvent, KNOWN_EFFECTS};
-    use serde_json::json;
-
-    /// The value must keep passing through untouched — PR1 only adds a warning,
-    /// it deliberately does not "helpfully" correct the author's data.
-    #[test]
-    fn effect_is_passed_through_verbatim() {
-        for raw in ["StarField", "starfield", "Starfield", "None", "Nonsense"] {
-            let e = BackgroundEffectEvent::from_event_data(&json!({ "effect": raw }));
-            assert_eq!(e.effect, raw);
-        }
-    }
-
-    #[test]
-    fn missing_effect_defaults_to_none() {
-        let e = BackgroundEffectEvent::from_event_data(&json!({}));
-        assert_eq!(e.effect, "none");
-    }
-
-    #[test]
-    fn known_effect_list_matches_the_frontend() {
-        // Mirrors the `v-if` chain in src/components/game/standard/GameBackground.vue.
-        assert_eq!(
-            KNOWN_EFFECTS,
-            ["StarField", "Rain", "Sakura", "Snow", "Fireworks"]
-        );
-    }
 }

@@ -13,7 +13,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use sea_orm::DatabaseConnection;
 use tauri::{AppHandle, Emitter};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 
 use crate::ai_service::game_system::game_status::GameStatus;
 use crate::ai_service::game_system::scene_store::SceneStore;
@@ -24,7 +24,7 @@ use crate::ai_service::message_system::processor::{
     EmotionSegment, MessageProcessor, UserMessageOutcome,
 };
 use crate::ai_service::message_system::producer::{SentenceItem, StreamProducer};
-use crate::ai_service::message_system::responses::{event_names, ReplyResponse};
+use crate::ai_service::message_system::responses::{ReplyResponse, event_names};
 use crate::ai_service::tools::registry::ToolRegistry;
 use crate::ai_service::tools::tool_loop::stream_with_tool_loop;
 use crate::ai_service::translator::Translator;
@@ -153,6 +153,7 @@ impl MessageGenerator {
 
     /// 把后台工具完成通知作为仅对 LLM 可见的临时 user context 触发新一轮回复。
     /// 通知不会写成玩家台词，避免界面和历史中出现伪造的用户消息。
+    #[cfg_attr(not(desktop), allow(dead_code))]
     pub async fn process_notification(&self, notification: String) -> Result<String> {
         let mut context = self.get_current_context().await?;
         if context.is_empty() {
@@ -271,11 +272,7 @@ impl MessageGenerator {
         }
 
         match self
-            .run_pipeline(
-                context,
-                user_message.to_string(),
-                user_msg_seq,
-            )
+            .run_pipeline(context, user_message.to_string(), user_msg_seq)
             .await
         {
             Ok(acc) => {
@@ -283,14 +280,14 @@ impl MessageGenerator {
                     events::emit_thinking(&self.deps.app, false);
                 }
                 Ok(acc)
-            }
+            },
             Err(e) => {
                 events::emit_error(&self.deps.app, &e);
                 if !self.deps.suppress_thinking {
                     events::emit_thinking(&self.deps.app, false);
                 }
                 Err(e)
-            }
+            },
         }
     }
 
@@ -300,6 +297,7 @@ impl MessageGenerator {
             return Ok(());
         };
         let mut gs = self.deps.game_status.lock().await;
+        gs.role_manager.invalidate_memory_history();
         if let Some(line) = gs.line_list.get_mut(idx) {
             line.base.content = ctx.processed.replace(temp, "");
         }
@@ -527,7 +525,7 @@ impl MessageGenerator {
                         Err(e) => {
                             tracing::error!("consumer {cid} 处理句子失败: {e}");
                             None
-                        }
+                        },
                     };
                     let _ = publish_tx.send((index, resp)).await;
                     if is_final {
@@ -559,15 +557,17 @@ impl MessageGenerator {
             let mut gs = self.deps.game_status.lock().await;
             // 试玩代号守卫：试玩中止后丢弃迟到回填，与 add_assistant_line 行为一致
             if gs.preview_generation == self.deps.generation {
+                gs.role_manager.invalidate_memory_history();
                 let insert_pos = tool_insert_pos.min(gs.line_list.len());
                 let perceived: Vec<i32> = gs.present_role_ids.iter().copied().collect();
 
                 for msg in tool_msgs.iter().rev() {
                     let (attribute, content, tool_call) = match msg.role.as_str() {
                         "assistant" => {
-                            let tool_call = msg.tool_calls.as_ref().map(|calls| {
-                                serde_json::to_string(calls).unwrap_or_default()
-                            });
+                            let tool_call = msg
+                                .tool_calls
+                                .as_ref()
+                                .map(|calls| serde_json::to_string(calls).unwrap_or_default());
                             (LineAttribute::Assistant, msg.content.clone(), tool_call)
                         },
                         "tool" => (
@@ -576,7 +576,8 @@ impl MessageGenerator {
                                 "tool_call_id": msg.tool_call_id,
                                 "result": serde_json::from_str::<serde_json::Value>(&msg.content)
                                     .unwrap_or(serde_json::Value::String(msg.content.clone())),
-                            })).unwrap_or_default(),
+                            }))
+                            .unwrap_or_default(),
                             None,
                         ),
                         _ => continue,
@@ -676,9 +677,15 @@ pub(crate) async fn consume_sentence(
     enrich_segments(deps, &mut segments).await?;
 
     // 3. 构建前端响应
-    let mut response =
-        build_reply_response(deps, &segments, user_message, is_final, user_message_seq, overrides)
-            .await?;
+    let mut response = build_reply_response(
+        deps,
+        &segments,
+        user_message,
+        is_final,
+        user_message_seq,
+        overrides,
+    )
+    .await?;
 
     // 3.5 最终句：快照本轮思考链，挂载到响应与台词行（供历史对话展示思考过程）
     if is_final {
@@ -709,9 +716,22 @@ fn parse_segments(deps: &SentenceDeps, sentence: &str) -> Vec<EmotionSegment> {
 fn tts_translation_language(tts_type: &str, voice_lang: &str) -> Option<&'static str> {
     match (tts_type, voice_lang) {
         ("gsv" | "opentts" | "sbv2" | "fishs2", "en") => Some("en"),
-        // IndexTTS2 官方支持中/英文：voice_lang=en 时先翻译成英文再合成
+        // IndexTTS 2.5 起官方支持中/英/日/西班牙/阿拉伯语：
+        // voice_lang 为非中文目标语言时先翻译成对应语言再合成
+        // （日语台词主模型已自带 japanese_text，无需在此强制重译）
         ("indextts2", "en") => Some("en"),
+        ("indextts2", "es") => Some("es"),
+        ("indextts2", "ar") => Some("ar"),
         ("gsv" | "opentts", "ko") => Some("ko"),
+        // CosyVoice 多语言自动检测：voice_lang 为 en/ko/de/fr/ru/pt 时先翻译成目标语言
+        // 再合成，否则会朗读主模型默认附带的日文译文（japanese_text）；
+        // ja 例外——主模型已自带日文译文，无需重译
+        ("cosyvoice", "en") => Some("en"),
+        ("cosyvoice", "ko") => Some("ko"),
+        ("cosyvoice", "de") => Some("de"),
+        ("cosyvoice", "fr") => Some("fr"),
+        ("cosyvoice", "ru") => Some("ru"),
+        ("cosyvoice", "pt") => Some("pt"),
         _ => None,
     }
 }
@@ -736,7 +756,6 @@ fn needs_japanese_translation(segments: &[EmotionSegment]) -> bool {
             && !looks_like_japanese(segment.japanese_text.trim())
     })
 }
-
 
 /// Step B: 翻译与语音生成。
 async fn enrich_segments(deps: &SentenceDeps, segments: &mut [EmotionSegment]) -> Result<()> {
@@ -847,7 +866,11 @@ async fn build_reply_response(
     response.is_final = is_final;
     response.user_message_seq = user_message_seq;
     // 试玩标记：前端据此丢弃中止后迟到的流式回复（非试玩为 None，不序列化）
-    response.preview_gen = if deps.is_preview { Some(deps.generation) } else { None };
+    response.preview_gen = if deps.is_preview {
+        Some(deps.generation)
+    } else {
+        None
+    };
 
     // 固定台词覆盖：dialogue 事件传入显示名/副标题/时长，生成路径全为默认值
     if let Some(dn) = &overrides.display_name {
