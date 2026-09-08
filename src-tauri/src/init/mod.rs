@@ -15,7 +15,9 @@ use tokio::sync::Mutex;
 use crate::ChatComponents;
 use crate::ai_service::emotion::EmotionClassifier;
 use crate::ai_service::game_system::persistent_memory_system::MemorySectionLimits;
+use crate::ai_service::game_system::vector_memory::set_dreams_client;
 use crate::ai_service::llm::LlmSlot;
+use crate::ai_service::llm::provider_config::resolve_dreams_provider;
 use crate::ai_service::llm::provider_config::{
     build_llm_client_from_provider, migrate_if_needed, migrate_legacy_vision_keys,
     resolve_chat_provider, resolve_translate_provider,
@@ -146,6 +148,12 @@ pub async fn initialize(
             .and_then(|p| build_llm_client_from_provider(&app.handle(), &p))
             .map(Arc::new),
     ));
+
+    // 发呆 LLM 槽位
+    let dreams_llm = resolve_dreams_provider(&app.handle())
+        .and_then(|p| build_llm_client_from_provider(&app.handle(), &p))
+        .map(Arc::new);
+    set_dreams_client(dreams_llm).await;
 
     let classifier = load_emotion_classifier(app_config.enable_emotion_classifier, &data_dir);
     let processor = Arc::new(MessageProcessor::new(
