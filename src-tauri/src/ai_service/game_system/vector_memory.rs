@@ -4,14 +4,12 @@ use std::{
     collections::HashMap,
     sync::{Arc, LazyLock, OnceLock},
 };
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::Mutex;
 use tokio::task::spawn_blocking;
 
 use engramai::{EmbeddingConfig, Memory, MemoryConfig, MemoryRecord, MemoryType};
 
-use crate::ai_service::llm::{
-    LlmClient, LlmConfig, LlmSlot, provider_config::resolve_dreams_provider, slot_snapshot,
-};
+use crate::ai_service::llm::{LlmClient, LlmSlot, slot_snapshot};
 
 /// 清理角色名中的非法文件名字符，兜底防空/防 `..`。
 /// 复用 memory.rs 笔记模块的同名函数逻辑。
