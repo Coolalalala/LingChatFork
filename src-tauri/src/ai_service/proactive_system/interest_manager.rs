@@ -65,7 +65,7 @@ impl InterestManager {
         let mut rng = rand::thread_rng();
         let prob = (self.interest + self.status_mod as f64 - 50.0) / 50.0;
         let roll = rng.gen_range(0.0..1.0);
-        let triggered = roll < prob;
+        let triggered = roll * roll < prob;
 
         tracing::info!(
             "[Engagement] Trigger check: prob={:.2}, roll={:.2}, triggered={}",
