@@ -24,9 +24,9 @@
       >
         <h3 class="hidden xl:block">{{ $t("views.mainChat.auto") }}</h3>
       </Button>
-      <!-- 桌宠模式依赖 Windows 透明置顶窗口与 hit-test（lib.rs 为 cfg(windows)），Android 不可用 -->
+      <!-- 桌宠模式依赖 Windows 透明置顶窗口与 hit-test（lib.rs 为 cfg(windows)），移动端不可用 -->
       <Button
-        v-if="!isAndroid()"
+        v-if="!isMobile()"
         type="nav"
         icon="character"
         @click="goToPetMode"
@@ -64,7 +64,7 @@
 
   import FullAccessWarning from "@/components/tools/FullAccessWarning.vue";
   import ImageSourcePicker from "@/components/ui/ImageSourcePicker.vue";
-  import { isAndroid, isWindows } from "@/utils/platform";
+  import { isMobile, isWindows } from "@/utils/platform";
   import { useSettingsStore } from "../../stores/modules/settings";
   import GameExtraUI from "../game/standard/GameExtraUI.vue";
 

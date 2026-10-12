@@ -41,7 +41,7 @@
           <div class="h-8 w-px bg-white/10"></div>
           <div class="flex items-center gap-2">
             <span
-              class="h-[9px] w-[9px] shrink-0 rounded-full"
+              class="h-2.25 w-2.25 shrink-0 rounded-full"
               :class="
                 engineLoading
                   ? 'bg-amber-300 shadow-[0_0_8px_rgba(252,211,77,0.5)]'
@@ -79,10 +79,7 @@
               </p>
             </div>
             <button
-              class="inline-flex h-[34px] w-[34px] items-center justify-center gap-[7px] rounded-md
-                border border-white/15 bg-white/5 text-white/80 transition-colors duration-200
-                enabled:hover:border-red-400/50! enabled:hover:bg-red-400/10!
-                enabled:hover:text-red-300! disabled:cursor-not-allowed disabled:opacity-40"
+              class="btn-icon btn-icon-danger"
               :title="t('settings.tts.deberta.delete')"
               :disabled="!status?.deberta_installed || busyAction !== null"
               @click="removeDeberta"
@@ -131,10 +128,7 @@
             </p>
           </div>
           <button
-            class="ml-auto inline-flex h-[34px] w-[34px] items-center justify-center gap-[7px]
-              rounded-md border border-white/15 bg-white/5 text-white/80 transition-colors
-              duration-200 enabled:hover:border-cyan-300/40 enabled:hover:bg-cyan-300/10
-              enabled:hover:text-cyan-50 disabled:cursor-not-allowed disabled:opacity-40"
+            class="btn-icon btn-icon-primary ml-auto"
             :title="t('settings.tts.refresh')"
             :disabled="loading"
             @click="refreshAll"
@@ -189,7 +183,7 @@
                   </p>
                 </div>
                 <button
-                  class="inline-flex min-h-9 shrink-0 items-center justify-center gap-[7px]
+                  class="inline-flex min-h-9 shrink-0 items-center justify-center gap-1.75
                     rounded-md border border-white/15 bg-white/5 px-3 py-2 text-[13px] text-white/80
                     transition-colors duration-200 enabled:hover:border-cyan-300/40
                     enabled:hover:bg-cyan-300/10 enabled:hover:text-cyan-50
@@ -243,7 +237,7 @@
               :aria-label="t('settings.tts.import.voiceIdPlaceholder')"
             />
             <button
-              class="inline-flex min-h-9 shrink-0 items-center justify-center gap-[7px] rounded-md
+              class="inline-flex min-h-9 shrink-0 items-center justify-center gap-1.75 rounded-md
                 border border-white/15 bg-white/5 px-3 py-2 text-[13px] text-white/80
                 transition-colors duration-200 enabled:hover:border-cyan-300/40
                 enabled:hover:bg-cyan-300/10 enabled:hover:text-cyan-50 disabled:cursor-not-allowed
@@ -288,7 +282,7 @@
               </option>
             </select>
             <button
-              class="inline-flex min-h-9 shrink-0 items-center justify-center gap-[7px] rounded-md
+              class="inline-flex min-h-9 shrink-0 items-center justify-center gap-1.75 rounded-md
                 border border-white/15 bg-white/5 px-3 py-2 text-[13px] text-white/80
                 transition-colors duration-200 enabled:hover:border-cyan-300/40
                 enabled:hover:bg-cyan-300/10 enabled:hover:text-cyan-50 disabled:cursor-not-allowed
@@ -317,7 +311,7 @@
 
           <div
             v-if="snapshot.voices.length === 0"
-            class="border-y border-white/10 py-[22px] text-center text-[13px] text-white/40"
+            class="border-y border-white/10 py-5.5 text-center text-[13px] text-white/40"
           >
             {{ t("settings.tts.installed.empty") }}
           </div>
@@ -352,21 +346,15 @@
                   >
                   <span
                     v-else
-                    class="shrink-0 rounded border border-cyan-300/25 border-red-400/35!
-                      bg-cyan-600/10 bg-red-400/10! px-1 py-px text-[10px] text-cyan-50/75
-                      text-red-200!"
+                    class="shrink-0 rounded border border-red-400/35 bg-red-400/10 px-1 py-px
+                      text-[10px] text-red-200"
                     :title="t('settings.tts.styleVectors.missing')"
                     >{{ t("settings.tts.styleVectors.missing") }}</span
                   >
                 </p>
               </div>
               <button
-                class="inline-flex h-[34px] w-[34px] items-center justify-center gap-[7px]
-                  rounded-md border border-white/15 bg-white/5 text-white/80 transition-colors
-                  duration-200 enabled:hover:border-cyan-300/40 enabled:hover:border-red-400/50!
-                  enabled:hover:bg-cyan-300/10 enabled:hover:bg-red-400/10!
-                  enabled:hover:text-cyan-50 enabled:hover:text-red-300! disabled:cursor-not-allowed
-                  disabled:opacity-40"
+                class="btn-icon btn-icon-danger"
                 :title="t('settings.tts.installed.deleteVoice')"
                 :disabled="busyAction !== null"
                 @click="removeVoice(voice)"
@@ -450,7 +438,7 @@
 
           <div class="mt-4 flex flex-wrap items-center gap-3">
             <button
-              class="inline-flex min-h-9 items-center justify-center gap-[7px] rounded-md border
+              class="inline-flex min-h-9 items-center justify-center gap-1.75 rounded-md border
                 border-cyan-300/40 bg-cyan-600/35 px-3.5 py-2 text-[13px] font-semibold text-cyan-50
                 transition-colors duration-200 enabled:hover:bg-cyan-600/50
                 disabled:cursor-not-allowed disabled:opacity-40"
@@ -499,7 +487,7 @@
             />
             <button
               v-if="cosyKeyConfigured"
-              class="inline-flex min-h-9 shrink-0 items-center justify-center gap-[7px] rounded-md
+              class="inline-flex min-h-9 shrink-0 items-center justify-center gap-1.75 rounded-md
                 border border-white/15 bg-white/5 px-3 py-2 text-[13px] text-white/80
                 transition-colors duration-200 enabled:hover:border-cyan-300/40
                 enabled:hover:bg-cyan-300/10 enabled:hover:text-cyan-50"
@@ -510,7 +498,7 @@
             </button>
             <button
               v-else
-              class="inline-flex min-h-9 shrink-0 items-center justify-center gap-[7px] rounded-md
+              class="inline-flex min-h-9 shrink-0 items-center justify-center gap-1.75 rounded-md
                 border border-cyan-300/40 bg-cyan-600/35 px-3.5 py-2 text-[13px] font-semibold
                 text-cyan-50 transition-colors duration-200 enabled:hover:bg-cyan-600/50
                 disabled:cursor-not-allowed disabled:opacity-40"
@@ -528,7 +516,7 @@
             </p>
             <div
               v-if="cosyVoices.length === 0"
-              class="border-t border-white/10 py-[22px] text-center text-[13px] text-white/40"
+              class="border-t border-white/10 py-5.5 text-center text-[13px] text-white/40"
             >
               {{ t("settings.tts.cosyvoice.voicesEmpty") }}
             </div>
@@ -557,10 +545,7 @@
                 </div>
                 <div class="flex shrink-0 items-center gap-2">
                   <button
-                    class="inline-flex h-[34px] w-[34px] items-center justify-center gap-[7px]
-                      rounded-md border border-white/15 bg-white/5 text-white/80 transition-colors
-                      duration-200 enabled:hover:border-cyan-300/40 enabled:hover:bg-cyan-300/10
-                      enabled:hover:text-cyan-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    class="btn-icon btn-icon-primary"
                     :title="t('settings.tts.cosyvoice.previewVoice')"
                     :disabled="cosyRegistering"
                     @click="previewVoiceFrom(voice)"
@@ -568,10 +553,7 @@
                     <Play :size="16" />
                   </button>
                   <button
-                    class="inline-flex h-[34px] w-[34px] items-center justify-center gap-[7px]
-                      rounded-md border border-white/15 bg-white/5 text-white/80 transition-colors
-                      duration-200 enabled:hover:border-red-400/50! enabled:hover:bg-red-400/10!
-                      enabled:hover:text-red-300! disabled:cursor-not-allowed disabled:opacity-40"
+                    class="btn-icon btn-icon-danger"
                     :title="t('settings.tts.cosyvoice.deleteVoice')"
                     :disabled="cosyRegistering"
                     @click="removeCosyVoice(voice)"
@@ -633,7 +615,7 @@
                   </option>
                 </select>
                 <button
-                  class="inline-flex min-h-9 shrink-0 items-center justify-center gap-[7px]
+                  class="inline-flex min-h-9 shrink-0 items-center justify-center gap-1.75
                     rounded-md border border-white/15 bg-white/5 px-3 py-2 text-[13px] text-white/80
                     transition-colors duration-200 enabled:hover:border-cyan-300/40
                     enabled:hover:bg-cyan-300/10 enabled:hover:text-cyan-50
@@ -651,7 +633,7 @@
                   </span>
                 </button>
                 <button
-                  class="inline-flex min-h-9 shrink-0 items-center justify-center gap-[7px]
+                  class="inline-flex min-h-9 shrink-0 items-center justify-center gap-1.75
                     rounded-md border border-cyan-300/40 bg-cyan-600/35 px-3.5 py-2 text-[13px]
                     font-semibold text-cyan-50 transition-colors duration-200
                     enabled:hover:bg-cyan-600/50 disabled:cursor-not-allowed disabled:opacity-40"
@@ -724,7 +706,7 @@
             </div>
             <div class="mt-4 flex flex-wrap items-center gap-3">
               <button
-                class="inline-flex min-h-9 items-center justify-center gap-[7px] rounded-md border
+                class="inline-flex min-h-9 items-center justify-center gap-1.75 rounded-md border
                   border-cyan-300/40 bg-cyan-600/35 px-3.5 py-2 text-[13px] font-semibold
                   text-cyan-50 transition-colors duration-200 enabled:hover:bg-cyan-600/50
                   disabled:cursor-not-allowed disabled:opacity-40"

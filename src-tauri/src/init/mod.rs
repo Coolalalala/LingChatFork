@@ -69,10 +69,11 @@ pub async fn initialize(
     // 提前加载配置 + 构建 LlmClient（AIService 的子成员 GameRoleManager 需要它）
     let app_config = AppConfig::load(&app.handle()).unwrap_or_default();
     tracing::info!(
-        "MemoryBank 配置: enabled={}, update_interval={}, recent_window={}, limits=[{},{},{},{}]（记忆设置需重启生效）",
+        "MemoryBank 配置: enabled={}, update_interval={}, recent_window={}, inject_continue_user={}, limits=[{},{},{},{}]（记忆设置需重启生效）",
         app_config.use_persistent_memory,
         app_config.memory_update_interval,
         app_config.memory_recent_window,
+        app_config.memory_inject_continue_user,
         app_config.memory_short_term_max_chars,
         app_config.memory_long_term_max_chars,
         app_config.memory_user_info_max_chars,
@@ -103,6 +104,7 @@ pub async fn initialize(
             user_info: app_config.memory_user_info_max_chars as usize,
             promises: app_config.memory_promises_max_chars as usize,
         },
+        app_config.memory_inject_continue_user,
     )
     .await;
 
@@ -113,7 +115,6 @@ pub async fn initialize(
         output_sec_lang: app_config.llm_output_sec_lang,
         no_emotion_limit: app_config.no_emotion_limit_prompt,
     };
-    ai_service.import_settings(settings, prompt_options).await;
 
     // 从 session store 读取各角色的上次服装，注入 GameRoleManager
     {
@@ -131,13 +132,11 @@ pub async fn initialize(
         ai_service.set_clothes_overrides(overrides).await;
     }
 
-    ai_service.init_game_status().await?;
+    ai_service
+        .init_game_status(character_id, prompt_options)
+        .await?;
 
-    tracing::info!(
-        "AIService 初始化完成: character_id={:?}, ai_name={}",
-        ai_service.character_id,
-        ai_service.ai_name,
-    );
+    tracing::info!("AIService 初始化完成");
 
     let ai_service: SharedAIService = Arc::new(Mutex::new(ai_service));
 

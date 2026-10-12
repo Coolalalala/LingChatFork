@@ -400,7 +400,12 @@
     </div>
 
     <!-- ========== RIGHT: Slide-in Panel ========== -->
-    <Transition name="slide">
+    <Transition
+      enter-active-class="transition duration-[350ms] ease-[cubic-bezier(0.18,0.89,0.32,1)]"
+      enter-from-class="translate-x-10 opacity-0"
+      leave-active-class="transition duration-[250ms] ease-[cubic-bezier(0.6,-0.28,0.74,0.05)]"
+      leave-to-class="translate-x-10 opacity-0"
+    >
       <div
         v-if="sidePanel"
         class="flex min-h-0 flex-col"
@@ -818,7 +823,7 @@
               >
                 <span
                   class="absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all duration-200"
-                  :class="editing.fast_mode ? 'left-[22px]' : 'left-0.5'"
+                  :class="editing.fast_mode ? 'left-5.5' : 'left-0.5'"
                 ></span>
               </button>
             </div>
@@ -872,6 +877,145 @@
                 ></div>
               </div>
             </label>
+
+            <!-- 思考等级：始终显示，仅在开启思考模式时可调整（OAuth 提供商走上方按模型能力渲染的下拉） -->
+            <div v-if="!isOAuthProvider" class="flex flex-col gap-1">
+              <label class="text-xs font-medium text-white/60">{{
+                $t("settings.llmProviders.form.thinkingLevel")
+              }}</label>
+              <div class="relative">
+                <select
+                  v-model="editing.reasoning_effort"
+                  :disabled="!editing.enable_thinking"
+                  class="focus:border-brand w-full cursor-pointer appearance-none rounded-lg border
+                    border-white/20 bg-white/10 py-2 pr-8 pl-3 text-sm text-white transition-colors
+                    outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <option :value="null" class="bg-gray-800 text-white">
+                    {{ $t("settings.llmProviders.form.reasoningDefault") }}
+                  </option>
+                  <option
+                    v-for="effort in thinkingLevelOptions"
+                    :key="effort"
+                    :value="effort"
+                    class="bg-gray-800 text-white"
+                  >
+                    {{ effortLabel(effort) }}
+                  </option>
+                </select>
+                <div
+                  class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5"
+                >
+                  <svg
+                    class="h-4 w-4 text-white/40"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M19 9l-7 7-7-7"
+                    />
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            <!-- 支持识图（原生多模态）：勾选后用户发图/截图直接走对话模型，不再旁白转述 -->
+            <div
+              class="flex items-center justify-between rounded-lg border border-white/10 bg-white/5
+                px-3 py-2"
+            >
+              <div class="flex flex-col gap-0.5">
+                <span class="text-xs font-medium text-white/60">{{
+                  $t("settings.llmProviders.form.supportVision")
+                }}</span>
+                <span class="text-[11px] text-white/35">{{
+                  $t("settings.llmProviders.form.supportVisionHint")
+                }}</span>
+              </div>
+              <button
+                type="button"
+                class="relative h-6 w-11 shrink-0 rounded-full transition-colors duration-200"
+                :class="editing.support_vision ? 'bg-brand' : 'bg-white/15'"
+                @click="editing.support_vision = !editing.support_vision"
+              >
+                <span
+                  class="absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all duration-200"
+                  :class="editing.support_vision ? 'left-[22px]' : 'left-0.5'"
+                ></span>
+              </button>
+            </div>
+
+            <!-- 原生识图压缩设置：仅启用识图时展示，默认不压缩（原图直发） -->
+            <div
+              v-if="editing.support_vision"
+              class="flex flex-col gap-3 rounded-lg border border-white/10 bg-white/5 p-3"
+            >
+              <div class="flex items-center justify-between">
+                <div class="flex flex-col gap-0.5">
+                  <span class="text-xs font-medium text-white/60">{{
+                    $t("settings.llmProviders.form.visionCompress")
+                  }}</span>
+                  <span class="text-[11px] text-white/35">{{
+                    $t("settings.llmProviders.form.visionCompressHint")
+                  }}</span>
+                </div>
+                <button
+                  type="button"
+                  class="relative h-6 w-11 shrink-0 rounded-full transition-colors duration-200"
+                  :class="editing.vision_compress ? 'bg-brand' : 'bg-white/15'"
+                  @click="editing.vision_compress = !editing.vision_compress"
+                >
+                  <span
+                    class="absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all
+                      duration-200"
+                    :class="editing.vision_compress ? 'left-[22px]' : 'left-0.5'"
+                  ></span>
+                </button>
+              </div>
+
+              <template v-if="editing.vision_compress">
+                <!-- 最大边长（像素） -->
+                <div class="flex flex-col gap-1">
+                  <label class="text-xs font-medium text-white/60">{{
+                    $t("settings.llmProviders.form.visionMaxEdge")
+                  }}</label>
+                  <input
+                    v-model.number="editing.vision_max_edge"
+                    type="number"
+                    step="64"
+                    min="64"
+                    max="8192"
+                    class="focus:border-brand rounded-lg border border-white/20 bg-white/10 px-3
+                      py-2 text-sm text-white transition-colors outline-none"
+                  />
+                  <span class="text-[11px] text-white/30">{{
+                    $t("settings.llmProviders.form.visionMaxEdgeHint")
+                  }}</span>
+                </div>
+
+                <!-- 编码质量（0-100） -->
+                <div class="flex flex-col gap-1">
+                  <label class="text-xs font-medium text-white/60">{{
+                    $t("settings.llmProviders.form.visionQuality")
+                  }}</label>
+                  <input
+                    v-model.number="editing.vision_jpeg_quality"
+                    type="number"
+                    min="1"
+                    max="100"
+                    class="focus:border-brand rounded-lg border border-white/20 bg-white/10 px-3
+                      py-2 text-sm text-white transition-colors outline-none"
+                  />
+                  <span class="text-[11px] text-white/30">{{
+                    $t("settings.llmProviders.form.visionQualityHint")
+                  }}</span>
+                </div>
+              </template>
+            </div>
 
             <!-- Action buttons -->
             <div class="flex gap-3 pt-2">
@@ -994,7 +1138,7 @@
     lmstudioAutoFilled.value = false;
     kimicodeAutoFilled.value = false;
     resetModelList();
-    // Codex 预设：直接拉内置模型目录并刷新登录状态
+    // Codex 预设：获取账号模型目录并刷新登录状态
     if (preset.provider === "codex") {
       fetchProviderModels();
       refreshCodexStatus();
@@ -1010,6 +1154,7 @@
   const kimicodeAutoFilled = ref(false);
   const availableModels = ref<LlmModelInfo[]>([]);
   const loadingModels = ref(false);
+  let modelRequestId = 0;
   const modelsMessage = ref("");
   const modelsError = ref(false);
 
@@ -1034,7 +1179,7 @@
       id: "",
       label: "",
       provider: "deepseek",
-      model: "deepseek-v4-flash",
+      model: "deepseek-flash",
       api_key: "",
       base_url: "https://api.deepseek.com",
       temperature: null,
@@ -1042,10 +1187,15 @@
       enable_thinking: false,
       reasoning_effort: null,
       fast_mode: false,
+      support_vision: false,
+      vision_compress: false,
+      vision_max_edge: 2048,
+      vision_jpeg_quality: 85,
     };
   }
 
   function closePanel() {
+    resetModelList();
     sidePanel.value = null;
     saveMessage.value = "";
   }
@@ -1065,6 +1215,9 @@
   });
   const showReasoningEffort = computed(() => reasoningEffortOptions.value.length > 0);
 
+  // 非 OAuth 提供商的思考等级固定档位（仅开启思考模式时生效，见后端 GenaiProvider 接线）
+  const thinkingLevelOptions = ["low", "medium", "high", "xhigh", "max"];
+
   function effortLabel(effort: string): string {
     const labels: Record<string, string> = {
       off: t("settings.llmProviders.form.effortOff"),
@@ -1081,9 +1234,9 @@
   // 切到不可调档的模型/提供商时清掉已选档位，避免残留值被静默发往其他模型；
   // 已选档位不在新模型的档位列表中时同样清空（跟随新模型默认）。
   // 但 Kimi Code 模型列表尚未加载时无法判断能力，先保留已配置值，待列表返回后再决定
-  watch([() => editing.provider, () => editing.model], () => {
+  watch([() => editing.provider, () => editing.model, reasoningEffortOptions], () => {
     if (isOAuthProvider.value && availableModels.value.length === 0) return;
-    const options = reasoningEffortOptions.value;
+    const options = isOAuthProvider.value ? reasoningEffortOptions.value : thinkingLevelOptions;
     if (
       options.length === 0 ||
       (editing.reasoning_effort && !options.includes(editing.reasoning_effort))
@@ -1093,6 +1246,8 @@
   });
 
   function resetModelList() {
+    modelRequestId++;
+    loadingModels.value = false;
     availableModels.value = [];
     modelsMessage.value = "";
     modelsError.value = false;
@@ -1102,7 +1257,7 @@
   function onProviderChange() {
     resetModelList();
     if (editing.provider === "deepseek") {
-      editing.model = "deepseek-v4-flash";
+      editing.model = "deepseek-flash";
       editing.base_url = "https://api.deepseek.com";
     } else if (editing.provider === "lmstudio") {
       editing.base_url = "http://localhost:1234/v1";
@@ -1113,7 +1268,7 @@
       editing.base_url = "https://api.kimi.com/coding";
       kimicodeAutoFilled.value = true;
     } else if (editing.provider === "codex") {
-      // Codex：OAuth 订阅，无需 key/base_url；模型走内置目录自动发现
+      // Codex：OAuth 订阅，无需 key/base_url；模型从登录账号在线发现
       editing.model = "gpt-5.6-sol";
       editing.base_url = "";
       editing.api_key = "";
@@ -1159,7 +1314,7 @@
     if (editing.provider === "kimicode" && editing.api_key.trim()) {
       fetchProviderModels();
     }
-    // Codex 模型目录内置在 provider 中（无需密钥），直接拉取；同时刷新登录状态
+    // Codex 复用订阅登录凭据获取模型目录；同时刷新登录状态
     if (editing.provider === "codex") {
       fetchProviderModels();
       refreshCodexStatus();
@@ -1205,17 +1360,20 @@
   async function fetchProviderModels() {
     if (loadingModels.value) return;
 
+    const requestId = ++modelRequestId;
     loadingModels.value = true;
     modelsMessage.value = "";
     modelsError.value = false;
     try {
       const models = await listLlmModels({ ...editing });
+      if (requestId !== modelRequestId) return;
       availableModels.value = models;
       if (!models.some((model) => model.id === editing.model)) {
         editing.model = models[0]?.id ?? editing.model;
       }
       modelsMessage.value = t("settings.llmProviders.msg.modelsFetched", { count: models.length });
     } catch (error: any) {
+      if (requestId !== modelRequestId) return;
       availableModels.value = [];
       // 命令返回结构化 { code, detail }：code → i18n 文案，detail = 原始错误
       const code = error?.code || "other";
@@ -1223,7 +1381,7 @@
       modelsMessage.value = t(`stores.llmErrors.${code}`) + (raw ? `\n原始错误：${raw}` : "");
       modelsError.value = true;
     } finally {
-      loadingModels.value = false;
+      if (requestId === modelRequestId) loadingModels.value = false;
     }
   }
 
@@ -1376,6 +1534,10 @@
               codexLoginError.value = false;
               codexLoginMessage.value = t("settings.llmProviders.codex.loginSuccess");
               await refreshCodexStatus();
+              if (editing.provider === "codex") {
+                resetModelList();
+                await fetchProviderModels();
+              }
             }
           } catch (e: any) {
             stopCodexPolling();
@@ -1412,6 +1574,7 @@
       /* 本地文件清理失败可忽略 */
     }
     await refreshCodexStatus();
+    if (editing.provider === "codex") resetModelList();
   }
 
   onMounted(async () => {
@@ -1420,27 +1583,7 @@
   });
 
   onUnmounted(() => {
+    modelRequestId++;
     stopCodexPolling();
   });
 </script>
-
-<style scoped>
-  .slide-enter-active {
-    transition:
-      transform 0.35s ease-[cubic-bezier(0.18, 0.89, 0.32, 1)],
-      opacity 0.35s ease;
-  }
-  .slide-leave-active {
-    transition:
-      transform 0.25s ease-[cubic-bezier(0.6, -0.28, 0.74, 0.05)],
-      opacity 0.25s ease;
-  }
-  .slide-enter-from {
-    transform: translateX(40px);
-    opacity: 0;
-  }
-  .slide-leave-to {
-    transform: translateX(40px);
-    opacity: 0;
-  }
-</style>

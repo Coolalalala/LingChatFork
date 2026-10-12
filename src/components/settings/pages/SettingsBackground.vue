@@ -13,6 +13,16 @@
         </div>
         <div class="ml-auto flex gap-3">
           <button
+            class="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-white/80
+              shadow-lg transition-all hover:bg-white/20 disabled:cursor-not-allowed
+              disabled:opacity-40"
+            :title="$t('settings.background.scene.refresh')"
+            :disabled="refreshing"
+            @click="handleRefreshScenes"
+          >
+            <RefreshCw :size="16" :class="refreshing ? 'animate-spin' : ''" />
+          </button>
+          <button
             class="bg-brand/80 border-brand hover:bg-brand rounded-full border px-5 py-1.5 text-sm
               font-bold text-white shadow-lg shadow-indigo-500/20 transition-all"
             @click="handleCreateScene"
@@ -527,7 +537,16 @@
     getActiveGpu,
     type GpuInfo,
   } from "../../../api/services/gpu-perf";
-  import { Image, PictureInPicture, Sparkles, Settings, Wand2, Wrench, Cpu } from "lucide-vue-next";
+  import {
+    Image,
+    PictureInPicture,
+    Sparkles,
+    Settings,
+    Wand2,
+    Wrench,
+    Cpu,
+    RefreshCw,
+  } from "lucide-vue-next";
   import SceneEditModal from "../scene/SceneEditModal.vue";
   import DialogAppearancePanel from "../dialog/DialogAppearancePanel.vue";
   import PluginTag from "@/components/ui/PluginTag.vue";
@@ -625,6 +644,7 @@
   );
 
   const scenes = ref<SceneInfo[]>([]);
+  const refreshing = ref(false);
 
   // 分页
   const ITEMS_PER_PAGE = 6;
@@ -662,6 +682,20 @@
       scenes.value = await listScenes();
     } catch (error) {
       console.error("获取场景列表失败", error);
+    }
+  };
+
+  const handleRefreshScenes = async () => {
+    if (refreshing.value) return;
+    refreshing.value = true;
+    try {
+      await Promise.all([fetchScenes(), refreshBackground()]);
+      uiStore.showSuccess({
+        title: t("settings.background.scene.refreshSuccess"),
+        duration: 2000,
+      });
+    } finally {
+      refreshing.value = false;
     }
   };
 

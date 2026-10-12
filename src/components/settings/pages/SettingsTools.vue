@@ -296,7 +296,7 @@
           <input
             type="text"
             v-model="form.web_search.model"
-            placeholder="deepseek-v4-flash"
+            placeholder="deepseek-flash"
             class="shadow-glass focus:border-brand focus:ring-brand/20 mt-2 w-full rounded-lg border
               border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white backdrop-blur-xl
               backdrop-saturate-150 transition-all duration-200 focus:ring-2 focus:outline-none"
@@ -626,7 +626,7 @@
     web_search: {
       enabled: false,
       provider: "kimi",
-      model: "deepseek-v4-flash",
+      model: "deepseek-flash",
       api_key: "",
       base_url: "",
       proxy_enabled: false,

@@ -364,11 +364,13 @@
             ? gameStore.userName || gameStore.mainRole?.roleName || t("pet.history.you")
             : t("pet.history.mysteryVoice"));
 
-      // 日文界面且存在日语译文时显示日语译文；繁体（香港）界面下转繁体显示
+      // 用户输入不做（…）动作切分，原样显示（{...} 已在 convertInitLines 去除）
       const segments =
-        locale.value === "ja" && msg.ttsText
-          ? [{ type: "dialogue" as const, text: msg.ttsText }]
-          : parseSegments(hkify(msg.content), hkify(msg.motionText), isNarration);
+        msg.type === "message"
+          ? [{ type: "dialogue" as const, text: hkify(msg.content) }]
+          : locale.value === "ja" && msg.ttsText
+            ? [{ type: "dialogue" as const, text: msg.ttsText }]
+            : parseSegments(hkify(msg.content), hkify(msg.motionText), isNarration);
 
       const entry: LineEntry = {
         segments,

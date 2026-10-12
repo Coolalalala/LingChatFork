@@ -6,7 +6,7 @@
         <template #header>
           <Cpu :size="20" />
         </template>
-        <p class="mb-3 min-h-[68px] text-sm leading-relaxed text-white/50">
+        <p class="mb-3 min-h-17 text-sm leading-relaxed text-white/50">
           {{ $t("advance.menu.llmDesc") }}
         </p>
         <Button type="big" icon="advance" :icon_size="18">
@@ -21,7 +21,7 @@
         <template #header>
           <AudioLines :size="20" />
         </template>
-        <p class="mb-3 min-h-[68px] text-sm leading-relaxed text-white/50">
+        <p class="mb-3 min-h-17 text-sm leading-relaxed text-white/50">
           {{ $t("advance.menu.ttsDesc") }}
         </p>
         <Button type="big" icon="mic" :icon_size="18"> {{ $t("advance.menu.ttsButton") }} </Button>
@@ -34,7 +34,7 @@
         <template #header>
           <Mic :size="20" />
         </template>
-        <p class="mb-3 min-h-[68px] text-sm leading-relaxed text-white/50">
+        <p class="mb-3 min-h-17 text-sm leading-relaxed text-white/50">
           {{ $t("advance.menu.asrDesc") }}
         </p>
         <Button type="big" icon="mic" :icon_size="18">
@@ -52,7 +52,7 @@
         <template #header>
           <SlidersHorizontal :size="20" />
         </template>
-        <p class="mb-3 min-h-[68px] text-sm leading-relaxed text-white/50">
+        <p class="mb-3 min-h-17 text-sm leading-relaxed text-white/50">
           {{ $t("advance.menu.otherDesc") }}
         </p>
         <Button type="big" icon="setting" :icon_size="18">
@@ -70,7 +70,7 @@
         <template #header>
           <Wrench :size="20" />
         </template>
-        <p class="mb-3 min-h-[68px] text-sm leading-relaxed text-white/50">
+        <p class="mb-3 min-h-17 text-sm leading-relaxed text-white/50">
           {{ $t("advance.menu.toolsDesc") }}
         </p>
         <Button type="big" icon="setting" :icon_size="18">
@@ -88,7 +88,7 @@
         <template #header>
           <Cast :size="20" />
         </template>
-        <p class="mb-3 min-h-[68px] text-sm leading-relaxed text-white/50">
+        <p class="mb-3 min-h-17 text-sm leading-relaxed text-white/50">
           {{ $t("advance.menu.castDesc") }}
         </p>
         <Button type="big" icon="advance" :icon_size="18">
@@ -103,7 +103,7 @@
         <template #header>
           <Languages :size="20" />
         </template>
-        <p class="mb-3 min-h-[68px] text-sm leading-relaxed text-white/50">
+        <p class="mb-3 min-h-17 text-sm leading-relaxed text-white/50">
           {{ $t("advance.menu.languageDesc") }}
         </p>
         <select
@@ -131,7 +131,7 @@
         <template #header>
           <BookOpen :size="20" />
         </template>
-        <p class="mb-3 min-h-[68px] text-sm leading-relaxed text-white/50">
+        <p class="mb-3 min-h-17 text-sm leading-relaxed text-white/50">
           {{ $t("advance.menu.guideDesc") }}
         </p>
         <Button type="big" icon="advance" :icon_size="18">

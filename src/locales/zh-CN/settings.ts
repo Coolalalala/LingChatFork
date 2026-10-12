@@ -229,6 +229,11 @@ export default {
           "MEMORY_UPDATE_INTERVAL — 触发摘要的可见台词数（1–10000，默认 250）",
         memory_recent_window:
           "MEMORY_RECENT_WINDOW — 压缩后保留的角色可见台词数（0–10000，默认 30）",
+        memory_inject_continue_user:
+          "MEMORY_INJECT_CONTINUE_USER — 上下文窗口内没有玩家（user）消息时（工具调用挤满窗口等情况），裁切到下一条 assistant 并在其前面注入一条 user「继续」，兼容要求首条消息为 user 的 provider（如 Gemini）；关闭则只裁切、不注入",
+        auto_save_enabled: "AUTO_SAVE_ENABLED — 是否启用自动存档（关闭后定时与退出存档均不再写入）",
+        auto_save_interval_secs:
+          "AUTO_SAVE_INTERVAL_SECS — 自动存档间隔（秒，30–3600，默认 300，改后即时生效）",
       },
       tts: {
         simple_vits_api_url: "Simple-Vits-API 地址（VITS 适配器）",
@@ -662,6 +667,8 @@ export default {
       openFolder: "打开文件夹",
       delete: "删除",
       edit: "编辑场景",
+      refresh: "刷新",
+      refreshSuccess: "场景列表已刷新",
       noDescription: "暂无描述（选择后不会触发旁白）",
       tip: "提示",
       noDescriptionTip: '场景"{name}"暂无描述，选择后不会触发场景旁白',
@@ -1014,6 +1021,7 @@ export default {
       fetchModels: "自动获取",
       fetchingModels: "获取中...",
       reasoningEffort: "推理深度（部分模型支持）",
+      thinkingLevel: "思考等级（仅开启思考模式时生效）",
       reasoningDefault: "默认（跟随模型）",
       effortLow: "Low（低）",
       effortMedium: "Medium（中）",
@@ -1028,6 +1036,14 @@ export default {
       temperature: "Temperature（留空使用默认）",
       topP: "Top P（留空使用默认）",
       enableThinking: "启用思考链（部分模型支持）",
+      supportVision: "支持识图（原生多模态）",
+      supportVisionHint: "勾选后发图/截图可直接走该对话模型识图，不再旁白转述",
+      visionCompress: "识图时压缩图片",
+      visionCompressHint: "默认关闭，图片原图直发。开启后可控制边长与质量，节省 token 与上下文缓存",
+      visionMaxEdge: "最大边长（像素）",
+      visionMaxEdgeHint: "超宽图片等比缩放到此边长（64–8192）",
+      visionQuality: "编码质量（0-100）",
+      visionQualityHint: "数值越高越清晰，体积（token 占用）也越大",
       save: "保存",
       cancel: "取消",
     },
