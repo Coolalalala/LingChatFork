@@ -163,7 +163,6 @@ impl NodeMemory {
 
     /// 沉淀记忆
     async fn consolidate(&self, time: f64) {
-        tracing::info!("(debug) consolidating memory for: {}days", time);
         let mutex = self.mem.clone();
         spawn_blocking(move || {
             let mut mem = mutex.lock().unwrap();
@@ -246,13 +245,20 @@ async fn get_or_create_mem(display_name: &str) -> Arc<NodeMemory> {
     tracing::info!("已创建角色 {} 的记忆", display_name);
     map.insert(display_name.to_string(), mem.clone());
     // 获取最新记忆时间并沉淀记忆
-    let recent_memories = mem.recall_recent(1, None);
+    let recent_memories = mem.recall_recent(1, Some("chat_msg"));
     if let Some(latest) = recent_memories.first() {
         let duration = Utc::now().signed_duration_since(latest.created_at);
         let days = duration.num_seconds() as f64 / 86400.0; // 转换为天数
         if days > 0.1 {
             mem.consolidate(days).await;
         }
+        // Debug
+        tracing::info!(
+            "(debug) 角色 {} 的最接近的记忆：{}\n时间：{}",
+            display_name,
+            latest.content,
+            latest.created_at
+        );
     }
     mem
 }
@@ -382,9 +388,10 @@ pub async fn daydream(
         "{}{}",
         r#"
 你是一个专业的【思绪分析专家】。接下来的消息中会包含你自己的思考内容，你的任务是抽取你自己思考内容中的结论。
-请从你思考的长文段中抽取 3-10 条信息（如历史经过，个人观点等）
+请从你思考的长文段中抽取 3-10 条信息
+如：“用户是男性”，“我很开心” 等
 不要记录客观上不可察觉的信息（如思绪的过程）
-使用第一人称，主观的语言。
+使用第一人称，主观的语言
 
 以下是重要度的具体指引参考：
 - 重要度 0.1-0.3：不太重要的信息，比如：事情经过，细节，暂时时效性的信息。
@@ -396,7 +403,7 @@ pub async fn daydream(
 出现的情绪 - 简单，重要
 
 
-对于每条新信息，请按以下格式输出：
+对于每条新信息，请严格按照以下格式输出，只输出 JSON，以字符 "{" 开始，以字符 "}" 结束：
 {
     "insights": [
         {
